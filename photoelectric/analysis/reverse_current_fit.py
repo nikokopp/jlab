@@ -98,12 +98,8 @@ for wavelength, color in zip(wavelengths, colors):
     plt.legend()
     plt.tight_layout()
 
-plt.savefig("/home/rck67/jlab/photoelectric/figures/reverse_current_fits.png", dpi=300)
+plt.savefig("/home/rck67/jlab/photoelectric/figures/reverse_currents/reverse_current_fits.png", dpi=300)
+print("Saved plot to /figures/reverse_currents/reverse_current_fits.png")
 
-# if linear fits look reasonable, then add this to our data and proceed with normalization
-data = data.merge(
-    reverse_curr_fits,
-    on="Wavelength_nm",
-    how="left",
-    validate="many_to_one" # multiple rows will be getting the same reverse current fit
-)
+reverse_curr_fits.to_csv("/home/rck67/jlab/photoelectric/data/reverse_current_fits.csv", index=False)
+print("Saved reverse current fits to /data/reverse_current_fits.csv")

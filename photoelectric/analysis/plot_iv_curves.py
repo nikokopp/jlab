@@ -12,7 +12,6 @@ wavelengths = [546.1, 435.7, 365]
 
 # folder to save plots
 figure_dir = Path("/home/rck67/jlab/photoelectric/figures/iv_curves")
-figure_dir.mkdir(parents=True, exist_ok=True)
 
 # palette
 plt.style.use("dark_background")
