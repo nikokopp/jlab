@@ -231,7 +231,7 @@ for wavelength in wavelengths:
                 b
             ),
             color="white",
-            label="Reverse-current fit"
+            label="Reverse current linear fit"
         )
 
         if (
@@ -254,7 +254,7 @@ for wavelength in wavelengths:
                 ),
                 color="white",
                 linestyle="--",
-                label="Reverse-current extrapolation"
+                label="Reverse current extrapolation"
             )
 
         # measured zero crossing
@@ -297,7 +297,7 @@ for wavelength in wavelengths:
         plt.xlabel("Retarding Voltage (V)")
         plt.ylabel("Current (nA)")
         plt.title(f"Method 1: {wavelength} nm, Run {run}")
-        plt.legend(fontsize=8)
+        plt.legend(fontsize=6)
         plt.tight_layout()
 
         plt.savefig(
