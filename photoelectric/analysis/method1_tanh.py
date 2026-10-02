@@ -314,3 +314,19 @@ fit_results = fit_results.sort_values(["Wavelength_nm", "Run"]).reset_index(drop
 # save our fits and cutoff voltages, yay!!
 fit_results.to_csv(output_dir / "data/method1_tanh_cutoffs.csv", index=False)
 print("Saved method 1 results to data/method1_tanh_cutoffs.csv")
+
+cutoff_stats = (
+    fit_results
+    .groupby("Wavelength_nm")["Vc_V"]
+    .agg(
+        mean_Vc_V="mean",
+        std_Vc_V="std",
+        N="count"
+    )
+    .reset_index()
+)
+
+cutoff_stats["SEM_Vc_V"] = cutoff_stats["std_Vc_V"] / np.sqrt(cutoff_stats["N"])
+
+cutoff_stats.to_csv("/home/rck67/jlab/photoelectric/data/method1_tanh_cutoff_stats.csv", index=False)
+print("Saved cutoff voltage statistics to /data/method1_tanh_cutoff_stats.csv")
