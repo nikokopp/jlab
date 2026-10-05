@@ -209,7 +209,7 @@ if __name__ == "__main__":
 
     plot_velocity_sweep(
         folder=folder,
-        B_target=100,
+        B_target=90,
         channel_min=0,
         channel_max=2048,
     )
