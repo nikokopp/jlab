@@ -7,6 +7,7 @@ import re
 from pathlib import Path
 
 def read_spe(filename):
+    """Read .spe file, including header and footer data."""
     path = Path(filename)
     lines = path.read_text().splitlines()
 
@@ -17,22 +18,17 @@ def read_spe(filename):
     first_channel, last_channel = map(int, lines[i_data + 1].split())
 
     n_channels = last_channel - first_channel + 1
-
-    counts = np.array(
-        [int(line.strip()) for line in lines[i_data + 2 : i_data + 2 + n_channels]],
-        dtype=int,
-    )
-
     channels = np.arange(first_channel, last_channel + 1)
+    
+    i_counts = i_data + 2
+    counts = np.array([int(line.strip()) for line in lines[i_counts : i_counts + n_channels]], dtype=int)
 
     if "$MCA_CAL:" in lines:
         i_cal = lines.index("$MCA_CAL:")
         n_coeffs = int(lines[i_cal + 1].strip())
 
         calibration_line = lines[i_cal + 2].split()
-        coeffs = np.array(
-            [float(x) for x in calibration_line[:n_coeffs]], dtype=float
-        )
+        coeffs = np.array([float(x) for x in calibration_line[:n_coeffs]], dtype=float)
         energy_unit = calibration_line[n_coeffs]
     else:
         i_cal = lines.index("$ENER_FIT:")
