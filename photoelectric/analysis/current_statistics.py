@@ -79,11 +79,13 @@ stats = (
     )
 )
 
-# SEM
-stats["SEM_I_nA"] = stats["std_I_nA"] / np.sqrt(stats["N"])
+# there are some values with 0 SEM, fix so that they are not overweighted in chi^2 fit
+current_resolution_nA = 0.001 # current only has resolution up to 0.001 nA
+sigma_resolution_nA = current_resolution_nA / np.sqrt(12)
 
-# keep only voltages with multiple runs
-stats = stats[stats["N"] > 1]
+stats["SEM_I_nA"] = stats["std_I_nA"] / np.sqrt(stats["N"])
+stats["resolution_uncertainty_nA"] = sigma_resolution_nA
+stats["sigma_I_nA"] = np.sqrt(stats["SEM_I_nA"]**2 + stats["resolution_uncertainty_nA"]**2)
 
 # print results
 for wavelength in wavelengths:
