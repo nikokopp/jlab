@@ -4,43 +4,74 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from pathlib import Path
 
-data_file = "/home/rck67/jlab/photoelectric/data/photoelectric_data_clean.csv"
-
+data_file = "/home/rck67/jlab/photoelectric/data/current_statistics.csv"
 data = pd.read_csv(data_file)
+# print(data.head())
 
-wavelengths = [546.1, 435.7, 365]
+wavelengths = [546.1, 435.7, 365.0]
+
+palette = sns.color_palette("mako", 5)
 
 # folder to save plots
 figure_dir = Path("/home/rck67/jlab/photoelectric/figures/iv_curves")
 
-# palette
-plt.style.use("dark_background")
-colors = sns.color_palette("husl", 5)
+# stack 3 plots
+fig, axes = plt.subplots(
+    3, 1,
+    figsize=(7,9),
+    sharex=True
+)
 
-for wavelength in wavelengths:
+panel_labels = ["(a)", "(b)", "(c)"]
+
+for ax, wavelength, panel_label in zip(axes, wavelengths, panel_labels):
     # select wavelength
-    wave_data = data[data["Wavelength_nm"] == wavelength]
+    wave_data = data[data["Wavelength_nm"] == wavelength].sort_values("Voltage_V")
 
-    # make new fig
-    plt.figure(figsize=(7,5))
+    # plot only data with repeated measurements so we can have error bars
+    repeated = wave_data["std_I_nA"].notna()
 
-    for (run, run_data), color in zip(wave_data.groupby("Run"), colors):
-            plt.scatter(
-            run_data["Voltage_V"],
-            run_data["Current_nA"],
-            color=color,
-            marker="o",
-            label=f"Run {run}"
-        )
+    ax.errorbar(
+        wave_data.loc[repeated, "Voltage_V"],
+        wave_data.loc[repeated, "mean_I_nA"],
+        yerr=wave_data.loc[repeated, "std_I_nA"],
+        fmt="o",
+        color=palette[1],
+        ecolor=palette[3],
+        markersize=4,
+        capsize=2,
+        linewidth=1
+    )
 
-    plt.axhline(0, color="white", linestyle="--")
+    # line at 0 current
+    ax.axhline(
+        0,
+        linestyle="--",
+        linewidth=1,
+        color="gray"
+    )
 
-    plt.xlabel("Retarding Voltage $V_r$ (V)")
-    plt.ylabel("Photocurrent $I$ (nA)")
-    plt.title(f"$I$ vs. $V_r$ for {wavelength} nm")
+    # wavelength label
+    ax.text(
+        0.97,
+        0.90,
+        rf"{panel_label} {wavelength} nm",
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=12,
+        fontweight="bold"
+    )
 
-    plt.legend()
-    plt.tight_layout()
+    ax.tick_params(direction="in")
 
-    plt.savefig(figure_dir / f"iv_{wavelength:g}nm.png", dpi=300)
-    print(f"Saved plot to {figure_dir}/iv_{wavelength:g}nm.png")
+fig.supylabel(r"Photocurrent $I$ (nA)")
+axes[-1].set_xlabel(r"Retarding Voltage $V_r$ (V)")
+axes[-1].set_xlim(-0.5, 8.5)
+
+plt.tight_layout()
+
+plt.savefig(figure_dir / "iv_curves_mean_stacked.png", dpi=300, bbox_inches="tight")
+print(f"Saved plot to {figure_dir}/iv_curves_mean_stacked.png")
+
+plt.show()
