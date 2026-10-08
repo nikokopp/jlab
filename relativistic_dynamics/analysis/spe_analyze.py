@@ -201,11 +201,11 @@ def plot_velocity_sweep(folder, B_target, channel_min, channel_max):
     plt.show()
 
 if __name__ == "__main__":
-    folder = "/home/rck67/jlab/relativistic_dynamics/data/raw/velocity_sweep/2026-10-05/"
+    folder = "/home/rck67/jlab/relativistic_dynamics/data/raw/velocity_sweep/2026-10-07/"
 
     plot_velocity_sweep(
         folder=folder,
-        B_target=90,
+        B_target=100,
         channel_min=0,
         channel_max=2048,
     )
