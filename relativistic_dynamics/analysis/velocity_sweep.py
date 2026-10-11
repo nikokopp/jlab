@@ -1,20 +1,20 @@
 import numpy as np
 import pandas as pd
-import matplotlib as plt
-import seaborn as sns
+import matplotlib.pyplot as plt
 
 from pathlib import Path
-from spe_analyze import read_spe, parse_run_name, roi_stats, plot_spectrum
+from spe_analyzer import read_spe, parse_run_name, roi_stats
 
-def plot_velocity_sweep(folder, B_target, channel_min, channel_max):
+def plot_velocity_sweep(folder, figure_dir, B_target, channel_min, channel_max):
     folder = Path(folder)
+    figure_dir = Path(figure_dir)
+    figure_dir.mkdir(parents=True, exist_ok=True)
 
     voltages = []
     rates = []
     rate_errors = []
 
     for filename in folder.glob("*.Spe"):
-
         run_info = parse_run_name(filename)
 
         # ignore files whose names don't match our expected pattern
@@ -63,6 +63,8 @@ def plot_velocity_sweep(folder, B_target, channel_min, channel_max):
         voltages,
         rates,
         yerr=rate_errors,
+        color="midnightblue",
+        ecolor="midnightblue",
         fmt="o-",
         capsize=3,
     )
@@ -72,14 +74,17 @@ def plot_velocity_sweep(folder, B_target, channel_min, channel_max):
     plt.title(f"Voltage sweep at B = {B_target} G")
 
     plt.tight_layout()
-    plt.show()
+    plt.savefig(figure_dir / f"velocity_sweep_B{B_target}.png")
+    print(f"Saved figure to {figure_dir}/velocity_sweep_B{B_target}.png")
 
 if __name__ == "__main__":
-    folder = "/home/rck67/jlab/relativistic_dynamics/data/raw/velocity_sweep/2026-10-07/"
+    folder = "/home/rck67/jlab/relativistic_dynamics/data/raw/velocity_sweep/2026-10-09/"
+    figure_dir = "/home/rck67/jlab/relativistic_dynamics/figures/velocity_sweep"
 
     plot_velocity_sweep(
         folder=folder,
-        B_target=100,
+        figure_dir = figure_dir,
+        B_target=80,
         channel_min=0,
         channel_max=2048,
     )

@@ -14,14 +14,13 @@ figure_dir.mkdir(parents=True, exist_ok=True)
 results_file = output_dir / "data/planck_fit_results.csv"
 
 method_files = {
-    "Method 1: DuBridge": output_dir / "data/method1_dubridge_cutoff_summary.csv",
-    "Method 2: piecewise linear": output_dir / "data/method2_piecewise_cutoff_summary.csv",
+    "Method 1": output_dir / "data/method1_dubridge_cutoff_summary.csv",
+    "Method 2": output_dir / "data/method2_piecewise_cutoff_summary.csv",
 }
 
-palette = ["mediumorchid", "cornflowerblue"]
-colors = dict(zip(method_files.keys(), palette))
-print(colors)
-
+palette = ["mediumorchid", "cornflowerblue", "indigo", "navy"]
+colors = dict(zip(method_files.keys(), palette[0:2]))
+data_colors = dict(zip(method_files.keys(), palette[2:]))
 def linear(x, m, b):
     return m*x + b
 
@@ -168,21 +167,21 @@ def plot_method_comparison(results):
             yerr=cutoffs["SEM_Vc_V"],
             fmt="o",
             capsize=4,
-            color="midnightblue",
-            ecolor="midnightblue",
+            color=data_colors[method_name],
+            ecolor=data_colors[method_name],
             label=f"{method_name} data",
         )
 
         ax.plot(
             nu_plot * 1e14,
             linear(nu_plot, *result["popt"]),
-            linewidth=2,
+            linewidth=3,
             color=colors[method_name],
-            label=f"{method_name} fit",
+            label=fr"{method_name} fit, $\chi^2$/dof = {result["reduced_chi2"]:.2f}"
         )
 
     ax.set_xlabel("Frequency (Hz)")
-    ax.set_ylabel(r"Mean cutoff voltage $V_c$ (V)")
+    ax.set_ylabel(r"Mean cutoff voltage $\bar{V}_c$ (V)")
     ax.set_title("Comparison of cutoff analysis methods")
     ax.legend(frameon=False)
     sns.despine()

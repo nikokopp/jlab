@@ -18,7 +18,7 @@ figure_dir = Path("/home/rck67/jlab/photoelectric/figures/iv_curves")
 # stack 3 plots
 fig, axes = plt.subplots(
     3, 1,
-    figsize=(7,9),
+    figsize=(7,6),
     sharex=True
 )
 

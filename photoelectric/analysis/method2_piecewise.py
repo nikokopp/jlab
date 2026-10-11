@@ -228,8 +228,8 @@ def main():
 
             palette = sns.color_palette("mako", 6)
             ax.plot(V_plot, I_fit, linewidth=2, color=palette[1], label="Piecewise linear fit")
-            ax.plot(V_plot, I_left, "--", linewidth=1.5, color=palette[3], label="Low-voltage line")
-            ax.plot(V_plot, I_right, "--", linewidth=1.5, color=palette[4], label="High-voltage line")
+            ax.plot(V_plot, I_left, "--", linewidth=1.5, color=palette[3], label="Linear (V < Vc)")
+            ax.plot(V_plot, I_right, "--", linewidth=1.5, color=palette[4], label="Linear (V >= Vc)")
             ax.axvline(
                 result["Vc"],
                 linestyle=":",
