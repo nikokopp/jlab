@@ -78,13 +78,13 @@ def plot_velocity_sweep(folder, figure_dir, B_target, channel_min, channel_max):
     print(f"Saved figure to {figure_dir}/velocity_sweep_B{B_target}.png")
 
 if __name__ == "__main__":
-    folder = "/home/rck67/jlab/relativistic_dynamics/data/raw/velocity_sweep/2026-10-09/"
+    folder = "/home/rck67/jlab/relativistic_dynamics/data/raw/velocity_sweep/2026-10-13/"
     figure_dir = "/home/rck67/jlab/relativistic_dynamics/figures/velocity_sweep"
 
     plot_velocity_sweep(
         folder=folder,
         figure_dir = figure_dir,
-        B_target=80,
+        B_target=110,
         channel_min=0,
         channel_max=2048,
     )
