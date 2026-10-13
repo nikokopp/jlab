@@ -85,7 +85,7 @@ if __name__ == "__main__":
     plot_velocity_sweep(
         folder=folder,
         figure_dir = figure_dir,
-        B_target=110,
+        B_target=120,
         channel_min=0,
         channel_max=2048,
     )
