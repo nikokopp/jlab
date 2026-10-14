@@ -61,7 +61,7 @@ def parse_run_name(filename):
 
 def roi_stats(spectrum, channel_min, channel_max):
     """
-    Calculate useful statistics inside a chosen channel region.
+    Calculate useful statistics inside a chosen channel region (region of interest, aka roi).
     """
     channels = spectrum["channels"]
     counts = spectrum["counts"]
@@ -105,6 +105,3 @@ def plot_spectrum(spectrum):
     plt.title(spectrum["path"].name)
     plt.tight_layout()
     plt.show()
-
-    
-

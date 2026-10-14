@@ -1,0 +1,42 @@
+{
+  "features": [
+    {
+      "name": "81_keV_peak",
+      "kind": "doublet",
+      "energy_keV": 80.997,
+      "window": [130, 160],
+      "fit_windows": [[132, 158], [128, 162], [126, 164]],
+      "expected_channel": 145,
+      "width_guess": 4.1,
+      "background_order": 2,
+      "enabled": true
+    },
+    {
+      "name": "53_keV_peak",
+      "kind": "gaussian",
+      "energy_keV": 53.1625,
+      "window": [85, 108],
+      "expected_channel": 95,
+      "background_order": 1,
+      "enabled": false
+    },
+    {
+      "name": "31_keV_peak",
+      "kind": "gaussian",
+      "energy_keV": 30.85,
+      "window": [46, 65],
+      "expected_channel": 55,
+      "background_order": 1,
+      "enabled": false
+    },
+    {
+      "name": "356_keV_edge",
+      "kind": "edge",
+      "energy_keV": 207.265,
+      "window": [349, 396],
+      "expected_channel": 370,
+      "background_order": 1,
+      "enabled": false
+    }
+  ]
+}
