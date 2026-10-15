@@ -16,27 +16,30 @@
       "kind": "gaussian",
       "energy_keV": 53.1625,
       "window": [85, 108],
+      "fit_windows": [[87, 106], [83, 110], [81, 112]],
       "expected_channel": 95,
       "background_order": 1,
-      "enabled": false
+      "enabled": true
     },
     {
       "name": "31_keV_peak",
-      "kind": "gaussian",
+      "kind": "cs_k_complex",
       "energy_keV": 30.85,
-      "window": [46, 65],
+      "window": [45, 72],
+      "fit_windows": [[47, 70], [43, 74], [41, 76]],
       "expected_channel": 55,
       "background_order": 1,
-      "enabled": false
+      "enabled": true
     },
     {
       "name": "356_keV_edge",
       "kind": "edge",
       "energy_keV": 207.265,
       "window": [349, 396],
+      "fit_windows": [[353, 392], [345, 400], [341, 404]],
       "expected_channel": 370,
       "background_order": 1,
-      "enabled": false
+      "enabled": true
     }
   ]
 }
