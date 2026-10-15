@@ -7,8 +7,7 @@ python analysis/compare_mca_calibrations.py \
     --output data/processed/calibration_results/comparison \
     --channel-min 40 --channel-max 750 --check-channels 55 145
 
-Uncertainty bands neglect correlations between overnight and daily fit errors.
-The daily two-point line cannot test linearity; high-channel comparisons extrapolate it.
+Code developed with AI assistance.
 """
 
 import argparse
