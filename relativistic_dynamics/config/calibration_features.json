@@ -2,9 +2,11 @@
   "features": [
     {
       "name": "81_keV_peak",
+      "display_name": "81 keV doublet",
+      "plot_label": "81 keV doublet",
       "kind": "doublet",
       "energy_keV": 80.997,
-      "window": [130, 160],
+      "window": [130, 158],
       "fit_windows": [[132, 158], [128, 162], [126, 164]],
       "expected_channel": 145,
       "width_guess": 4.1,
@@ -13,6 +15,8 @@
     },
     {
       "name": "53_keV_peak",
+      "display_name": "53 keV peak",
+      "plot_label": "53 keV peak",
       "kind": "gaussian",
       "energy_keV": 53.1625,
       "window": [85, 108],
@@ -23,23 +27,28 @@
     },
     {
       "name": "31_keV_peak",
+      "display_name": "31 keV Cs K X-ray multiplet",
+      "plot_label": "Cs K multiplet",
       "kind": "cs_k_complex",
-      "energy_keV": 30.85,
-      "window": [45, 72],
-      "fit_windows": [[47, 70], [43, 74], [41, 76]],
+      "energy_keV": 30.97313,
+      "window": [42, 70],
+      "fit_windows": [[42, 70], [45, 70], [45, 74]],
+      "width_guess": 4,
       "expected_channel": 55,
-      "background_order": 1,
+      "background_order": 2,
       "enabled": true
     },
     {
       "name": "356_keV_edge",
+      "display_name": "207 keV Compton edge (from 356 keV photon line)",
+      "plot_label": "207 keV Compton edge",
       "kind": "edge",
       "energy_keV": 207.265,
-      "window": [349, 396],
+      "window": [348, 397],
       "fit_windows": [[353, 392], [345, 400], [341, 404]],
       "expected_channel": 370,
-      "background_order": 1,
-      "enabled": true
+      "background_order": 2,
+      "enabled": false
     }
   ]
 }

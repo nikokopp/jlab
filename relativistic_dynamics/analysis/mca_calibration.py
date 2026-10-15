@@ -7,11 +7,11 @@ Then, run the calibration.
 For daily calibrations, use the results of the overnight calibration as a reference.
 
 Overnight:
-    python mca_calibration_pipeline.py inspect --spe data.Spe --output results
-    python mca_calibration_pipeline.py overnight --spe data.Spe \
+    python analysis/mca_calibration_pipeline.py inspect --spe data.Spe --output results
+    python analysis/mca_calibration_pipeline.py overnight --spe data.Spe \
         --config calibration_features.json --output results
 Daily:
-    python mca_calibration_pipeline.py daily --reference results/overnight_calibration.json \
+    python analysis/mca_calibration_pipeline.py daily --reference results/overnight_calibration.json \
         --files 'data/raw/calibration/*/*.Spe' --output results/daily
 
 Code was developed with AI assistance.
@@ -32,7 +32,7 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
 from scipy.special import erfc, xlogy
-from spe_analyzer import read_spe
+from spe_analyzer import read_spe, parse_run_name
 
 # emission intensities for 81.0 keV peak
 E_81 = 80.997
@@ -45,63 +45,61 @@ CS_K_E = np.array([30.97313, 30.62540, 34.9873, 34.91968, 35.8126])
 CS_K_REL = np.array([.53016, .28705, .09551, .04947, .03552]) / .53016
 CS_K_ALPHA1 = float(CS_K_E[0])
 
+
 def compton_edge_keV(gamma_energy_keV):
     """Maximum electron kinetic energy for 180-degree gamma scattering."""
     return gamma_energy_keV * (1 - 1 / (1 + 2 * gamma_energy_keV / 510.99895))
 
-def model(x, params, kind, center, slope_guess, fixed_width=None, background_order=1, fixed_beta_scale=None):
-    """3 types of feature models: gaussian peak, constrained double gaussian, or Compton edge.
-
-    Local positive background: b0*exp(s1*(x-center) + s2*(x-center)^2).
-    Over short windows it resembles a linear/quadratic background, but never results in negative poisson mean.
-    """
+def model_components(x, params, kind, center, slope_guess, fixed_width=None, background_order=1, fixed_beta_scale=None):
+    """Return the spectral feature and positive exponential background."""
+    x = np.asarray(x, dtype=float)
     amp, mu = params[:2]
 
-    j = 2
-
+    idx = 2
     if fixed_width is None:
-        width = params[j]
-        j += 1
+        width = params[idx]
+        idx += 1
     else:
         width = fixed_width
 
-    log_b0 = params[j]
-    slope = params[j + 1]
-    curvature = params[j + 2] if background_order == 2 else 0.
+    log_b0 = params[idx]
+    bg_slope = params[idx + 1]
+    bg_curve = params[idx + 2] if background_order == 2 else 0.0
 
     z = x - center
+    background = np.exp(np.clip(log_b0 + bg_slope*z + bg_curve*z**2, -30, 30))
 
-    background = np.exp(np.clip(log_b0 + slope * z + curvature * z**2, -30, 30))
     if kind == 'gaussian':
         signal = amp * np.exp(-0.5 * ((x - mu) / width)**2)
-    elif kind == 'cs_k_complex': 
-        # blend of a bunch of emission lines, so more complex than just two gaussians
-        # mu is the Kalpha1 position, not centroid of entire curve
-        # Ka1/Ka2 relative strength fixed from atomic data
 
+    elif kind == 'cs_k_complex':
         beta_scale = params[-1] if fixed_beta_scale is None else fixed_beta_scale
-        signal = np.zeros_like(x, dtype=float)
+        signal = np.zeros_like(x)
 
-        for i, (E, rel) in enumerate(zip(CS_K_E, CS_K_REL)):
-            center_i = mu + (E - CS_K_ALPHA1) / slope_guess
+        for i, (energy, rel) in enumerate(zip(CS_K_E, CS_K_REL)):
+            mu_i = mu + (energy - CS_K_ALPHA1) / slope_guess
+            strength = rel * (beta_scale if i >= 2 else 1.0)
+            signal += amp * strength * np.exp(-0.5 * ((x - mu_i) / width)**2)
 
-            if i >= 2:
-                rel *= beta_scale
-            signal += amp * rel * np.exp(-0.5 * ((x - center_i) / width)**2)
-
-    elif kind == 'doublet': 
-        # double gaussian
+    elif kind == 'doublet':
         delta = (E_81 - E_79) / slope_guess
         signal = amp * (np.exp(-0.5 * ((x - mu) / width)**2)
                         + R_79_81 * np.exp(-0.5 * ((x - (mu - delta)) / width)**2))
-        
+
     elif kind == 'edge':
-        # local approximate edge model
         signal = 0.5 * amp * erfc((x - mu) / (np.sqrt(2) * width))
 
     else:
         raise ValueError(f'Unknown feature kind: {kind}')
-    
+
+    return signal, background
+
+
+def model(x, params, kind, center, slope_guess, fixed_width=None, background_order=1, fixed_beta_scale=None):
+    signal, background = model_components(
+        x, params, kind, center, slope_guess,
+        fixed_width, background_order, fixed_beta_scale
+    )
     return signal + background
 
 def poisson_deviance_residuals(y, prediction):
@@ -173,6 +171,7 @@ def fit_feature(spectrum, feature, slope_guess, *, fixed_width=None, fixed_beta_
     
     pred = predict(outcome.x)
     chi2 = float(np.sum(poisson_deviance_residuals(y, pred)**2))
+    pearson_chi2 = float(np.sum((y - pred)**2 / np.maximum(pred, 1e-10)))
     dof = int(len(x) - len(outcome.x))
 
     try:
@@ -189,51 +188,127 @@ def fit_feature(spectrum, feature, slope_guess, *, fixed_width=None, fixed_beta_
     beta_scale = (float(outcome.x[-1]) if kind == 'cs_k_complex' and
                   fixed_beta_scale is None else fixed_beta_scale)
     
-    return dict(name=feature['name'], 
+    return dict(name=feature['name'],
+                display_name=feature.get('display_name', feature['name']),
+                plot_label=feature.get('plot_label', feature.get('display_name', feature['name'])),
                 kind=kind, 
                 energy_keV=float(feature['energy_keV']),
                 beta_scale=beta_scale,
                 mu_ch=float(outcome.x[1]), 
                 mu_stat_ch=mu_stat,
                 width_ch=width, 
-                deviance=chi2, 
+                deviance=chi2,
+                pearson_chi2=pearson_chi2,
+                reduced_pearson_chi2=pearson_chi2/dof if dof > 0 else float('nan'),
                 dof=dof,
                 reduced_deviance=chi2/dof if dof > 0 else float('nan'),
                 bound_hit=bool(bound_hit), 
                 x=x, 
                 y=y, 
                 prediction=pred,
-                params=outcome.x, 
+                params=outcome.x,
+                fixed_width=fixed_width,
+                fixed_beta_scale=fixed_beta_scale,
                 center=center, 
                 slope_guess=slope_guess,
                 background_order=order)
 
 
-def diagnostic_plot(spectrum, fitted, output_path):
-    fig, (ax, resax) = plt.subplots(2, 1, figsize=(7.0, 4.8), sharex=True, gridspec_kw={'height_ratios': [3, 1]})
+def calibration_run_label(spectrum, run_type):
+    """Make a readable title using the calibration filename and MCA live time."""
+    info = parse_run_name(spectrum['path'])
+    date = info.get('date') if info else None
 
-    x, y, pred = fitted['x'], fitted['y'], fitted['prediction']
+    if not date:
+        date = spectrum.get('measurement_date', 'Unknown date')
 
-    ax.step(x, y, where='mid', color='.35', label='Observed')
-    ax.plot(x, pred, color='midnightblue', label='Fitted model')
+    heading = f"Ba-133 {run_type.title()} Calibration ({date})"
+    return heading, f"Live time: {spectrum['live_time_s']:,.0f} s"
 
-    ax.set(ylabel='Counts/channel', title=f"{spectrum['path'].name}: {fitted['name']}")
 
-    ax.legend(frameon=False)
+def diagnostic_plot(spectrum, fitted, output_path, run_type='overnight'):
+    """Plot raw bins, fitted bins, signal plus background, and Poisson residuals."""
+    kind_labels = {
+        'gaussian': ('Gaussian photopeak', r'\mu_{53}'),
+        'cs_k_complex': ('Cs K\u03b1/K\u03b2 multiplet', r'\mu_{\alpha 1}'),
+        'doublet': ('79.6/81.0 keV double Gaussian', r'\mu_{81}'),
+        'edge': ('Gaussian-broadened Compton edge', r'n_{\mathrm{edge}}'),
+    }
+    model_name, centroid_symbol = kind_labels[fitted['kind']]
 
-    r = poisson_deviance_residuals(y, pred)
-    resax.plot(x, r, '.', color='black')
-    resax.axhline(0, color='.5', ls='--')
-    resax.set(xlabel='MCA channel', ylabel='Standardized residuals')
+    x = fitted['x']
+    y = fitted['y']
+    pred = fitted['prediction']
+    lower, upper = float(x.min()), float(x.max())
+    padding = max(6, 0.28 * (upper - lower))
 
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=180)
+    raw_ch = np.asarray(spectrum['channels'])
+    raw_ct = np.asarray(spectrum['counts'])
+    mask = (raw_ch >= lower - padding) & (raw_ch <= upper + padding)
+    dense = np.linspace(lower, upper, 500)
+
+    width = fitted.get('fixed_width')
+    beta_scale = fitted.get('fixed_beta_scale')
+    signal, bg = model_components(
+        dense, fitted['params'], fitted['kind'], fitted['center'],
+        fitted['slope_guess'], width, fitted['background_order'], beta_scale
+    )
+
+    fig, (ax, ax_res) = plt.subplots(
+        2, 1, figsize=(8.0, 6.0), sharex=True,
+        gridspec_kw={'height_ratios': [3, 1], 'hspace': 0.08}
+    )
+
+    ax.step(raw_ch[mask], raw_ct[mask], where='mid',
+            color='0.72', lw=1.1, label='Raw spectrum', zorder=1)
+    ax.axvspan(lower, upper, color='0.9', alpha=0.48, zorder=0)
+    ax.errorbar(x, y, yerr=np.sqrt(np.maximum(y, 1)), fmt='o',
+                markersize=3.1, color='black', ecolor='black',
+                elinewidth=0.7, capsize=0, label='Data in fit region', zorder=4)
+    ax.plot(dense, signal + bg, color='cornflowerblue', lw=1.5,
+            label=model_name, zorder=3)
+    ax.plot(dense, bg, '--', color='mediumpurple', lw=1.5,
+            label=f'Exponential background (order {fitted["background_order"]})', zorder=2)
+
+    mu = fitted['mu_ch']
+    ax.axvline(mu, color='black', ls='--', lw=1.7, alpha=0.8,
+               label='Fitted channel', zorder=2)
+    stat = fitted['mu_stat_ch']
+    win = fitted.get('mu_window_sys_ch')
+    chi2dof = fitted.get('reduced_deviance', float('nan'))
+
+    annotation = rf'${centroid_symbol} = {mu:.3f} \pm {stat:.3f}_{{\mathrm{{stat}}}}$ channels'
+    if win is not None and np.isfinite(win):
+        annotation += '\n' + rf'$\sigma_{{\mathrm{{Window}}}}$: {win:.3f} channels'
+    annotation += '\n' + rf'$\chi^2_{{\mathrm{{Poisson}}}}/\mathrm{{dof}} = {chi2dof:.2f}$'
+
+    text_y = 0.04 if fitted['kind'] == 'edge' else 0.975
+    text_va = 'bottom' if fitted['kind'] == 'edge' else 'top'
+    ax.text(0.015, text_y, annotation, transform=ax.transAxes,
+            va=text_va, fontsize=9, bbox={'facecolor': 'white',
+                                       'edgecolor': '0.78', 'alpha': 0.95,
+                                       'boxstyle': 'round,pad=0.4'})
+    ax.set_ylabel('Counts per channel')
+    ax.legend(loc='upper right', fontsize=8.5, frameon=False)
+
+    residual = poisson_deviance_residuals(y, pred)
+    ax_res.plot(x, residual, 'o', markersize=3.0, color='black')
+    ax_res.axhline(0, color='0.5', ls='--', lw=1.0)
+    ax_res.set(xlabel='MCA channel', ylabel='Deviance residuals')
+    ax_res.set_xlim(lower - padding, upper + padding)
+
+    title, live_time = calibration_run_label(spectrum, run_type)
+
+    subtitle = f'{fitted["display_name"]}, {live_time}'
+    fig.suptitle(f'{title}\n{subtitle}', fontsize=12, y=0.985, linespacing=1.5)
+    fig.subplots_adjust(top=0.855, bottom=0.11, left=0.13, right=0.97)
+
+    fig.savefig(output_path, dpi=200)
     plt.close(fig)
-
 
 def serializable_fit(fitted):
     return {k: v for k, v in fitted.items() if k not in
-            {'x', 'y', 'prediction', 'params', 'center', 'slope_guess', 'background_order'}}
+            {'x', 'y', 'prediction', 'params', 'center', 'slope_guess', 'background_order', 'fixed_width', 'fixed_beta_scale'}}
 
 def fit_calibration_line(feature_rows):
     """
@@ -272,7 +347,8 @@ def fit_calibration_line(feature_rows):
                 slope_err_keV_per_channel=float(np.sqrt(max(cov[0,0],0))),
                 offset_err_keV=float(np.sqrt(max(cov[1,1],0))),
                 covariance_keV=np.asarray(cov).tolist(),
-                chi2=chi2, dof=len(ch)-2, 
+                chi2=chi2, 
+                dof=len(ch)-2, 
                 n_features=len(ch),
                 residuals_keV=(E-(a*ch+b)).tolist())
 
@@ -330,18 +406,25 @@ def run_overnight(args):
                     warnings.warn(f"Window {trial_window} failed for {f['name']}")
             # largest observed sensitivity from a window choice
 
-            sys_ch = max([abs(v) for v in shift] + [0])
-            sys_ch = np.hypot(sys_ch, float(f.get('systematic_centroid_ch',0)))
+            window_sys = max([abs(v) for v in shift] + [0])
+            extra_sys = float(f.get('systematic_centroid_ch', 0))
+            sys_ch = float(np.hypot(window_sys, extra_sys))
 
             row = serializable_fit(base)
 
-            row['mu_window_sys_ch'] = float(sys_ch)
+            row['mu_window_sys_ch'] = float(window_sys)
+            row['mu_extra_sys_ch'] = extra_sys
+            row['mu_sys_ch'] = sys_ch
             row['mu_total_ch'] = float(np.hypot(base['mu_stat_ch'], sys_ch))
+            row['fit_windows_ch'] = f.get('fit_windows', [])
             row['window_shifts_ch'] = shift
+
+            base['mu_window_sys_ch'] = window_sys
+            base['mu_total_ch'] = row['mu_total_ch']
 
             rows.append(row)
 
-            diagnostic_plot(s, base, out/f"feature_{f['name']}.png")
+            diagnostic_plot(s, base, out/f"feature_{f['name']}.png", run_type='overnight')
 
             print(f"{f['name']}: {row['mu_ch']:.3f} ± {row['mu_stat_ch']:.3f} (stat)"
                   f" ± {sys_ch:.3f} (window) channels; dev/dof="
@@ -364,12 +447,55 @@ def run_overnight(args):
             en = np.array([r['energy_keV'] for r in rows])
             er = np.array([r['mu_total_ch'] for r in rows])
 
-            ax.errorbar(ch, en, xerr=er, fmt='o', capsize=2, color="midnightblue", ecolor="midnightblue")
+            ax.errorbar(ch, en, xerr=er, fmt='o', markersize=3,
+                        capsize=4, capthick=1.1, elinewidth=1.3,
+                        color="midnightblue", ecolor="midnightblue",
+                        label='Calibration points', zorder=5)
+
+            for point, row in zip(zip(ch, en), rows):
+                ax.annotate(row.get('plot_label', row['name']), point,
+                            xytext=(-10, 10), textcoords='offset points',
+                            ha='right', va='bottom', fontsize=8, color='0.25')
+
             xv = np.linspace(min(ch)-10, max(ch)+10, 200)
+            ax.plot(xv, line['slope_keV_per_channel']*xv+line['offset_keV'],
+                    color='cornflowerblue', lw=0.8, label='Linear fit', zorder=3)
 
-            ax.plot(xv, line['slope_keV_per_channel']*xv+line['offset_keV'])
+            cov = np.array(line['covariance_keV'])
 
-            ax.set(xlabel='MCA channel', ylabel='Deposited energy (keV)', title='Overnight Ba-133 calibration')
+            energy_fit = (line['slope_keV_per_channel'] * xv + line['offset_keV'])
+            energy_err = np.sqrt(cov[0, 0] * xv**2 + 2 * cov[0, 1] * xv + cov[1, 1])
+
+            ax.fill_between(
+                xv,
+                energy_fit - energy_err,
+                energy_fit + energy_err,
+                color='cornflowerblue',
+                alpha=0.45,
+                zorder=2,
+                label=r'$1\sigma$ fit uncertainty'
+            )
+
+            heading, live_time = calibration_run_label(s, 'overnight')
+            ax.set(xlabel='MCA channel', ylabel='Deposited energy (keV)', title=f'{heading}\n{live_time}')
+            ax.set_xlim(min(ch) - 60, max(ch) + 15)
+            ax.set_ylim(min(en) - 18, max(en) + 28)
+            ax.legend(frameon=False, loc='lower right', fontsize=8)
+
+            if line['dof'] > 0:
+                ax.text(
+                    0.03, 0.97,
+                    rf'$\chi^2/\mathrm{{dof}} = {line["chi2"]/line["dof"]:.3f}$',
+                    transform=ax.transAxes,
+                    va='top',
+                    fontsize=9,
+                    bbox=dict(
+                        facecolor='white',
+                        edgecolor='0.8',
+                        boxstyle='round,pad=0.35',
+                        alpha=0.95
+                    )
+                )
 
             fig.tight_layout()
             fig.savefig(out/'overnight_calibration_line.png', dpi=180)
@@ -430,6 +556,8 @@ def run_daily(args):
 
         config = {
             'name': ref['name'],
+            'display_name': ref.get('display_name', ref['name']),
+            'plot_label': ref.get('plot_label', ref.get('display_name', ref['name'])),
             'kind': ref['kind'],
             'energy_keV': ref['energy_keV'],
             'expected_channel': center,
@@ -464,7 +592,7 @@ def run_daily(args):
             ba_first = fit_daily_peak(spectrum, ba_ref, slope)
             anchor_shift = ba_first['mu_ch'] - (scale * ba_ref['mu_ch'] + shift)
 
-            # update the line separations as the daily slope is refined
+            # Update the line separations as the daily slope is refined.
             for iteration in range(2):
                 fitted = []
 
@@ -472,20 +600,25 @@ def run_daily(args):
                                                 and peak53_ref is not None else []):
                     try:
                         fit = fit_daily_peak(spectrum, ref, slope, anchor_shift)
-                        
-                        # compare two nearby fit windows
-                        alt = fit_daily_peak(spectrum, ref, slope, anchor_shift, shrink=2)
+                        window_shifts = []
+                        for shrink in (2, 4, -2):
+                            try:
+                                alt = fit_daily_peak(spectrum, ref, slope, anchor_shift, shrink=shrink)
+                                window_shifts.append(alt['mu_ch'] - fit['mu_ch'])
+                            except (ValueError, RuntimeError):
+                                warnings.warn(f'{name}: alternate window failed for {ref["name"]}')
 
-                        window_unc = abs(fit['mu_ch'] - alt['mu_ch'])
-                        model_unc = scale * ref.get('mu_window_sys_ch', 0.0)
+                        window_unc = max([abs(v) for v in window_shifts] + [0])
+                        reference_unc = scale * ref.get('mu_window_sys_ch', 0.0)
 
-                        fit['mu_window_sys_ch'] = window_unc
+                        fit['mu_window_sys_ch'] = float(window_unc)
+                        fit['mu_reference_window_sys_ch'] = float(reference_unc)
+                        fit['window_shifts_ch'] = window_shifts
                         fit['mu_total_ch'] = float(np.sqrt(fit['mu_stat_ch']**2 +
-                                                          window_unc**2 + model_unc**2))
+                                                          window_unc**2 + reference_unc**2))
 
                         width_ratio = fit['width_ch'] / (scale * ref['width_ch'])
-
-                        # reject unconstrained fits before calibrating
+                        # Reject unconstrained fits before calibrating.
                         is_valid = (not fit['bound_hit']
                                     and fit['reduced_deviance'] < 5.0
                                     and np.isfinite(fit['mu_total_ch'])
@@ -514,7 +647,7 @@ def run_daily(args):
                 entry.update(file=str(path), use_in_calibration=fit['use_in_calibration'])
                 feature_rows.append(entry)
 
-                diagnostic_plot(spectrum, fit, out / f'{name}_{fit["name"]}.png')
+                diagnostic_plot(spectrum, fit, out / f'{name}_{fit["name"]}.png', run_type='daily')
 
             if len(usable) < 2:
                 row.update(status='INSUFFICIENT_FEATURES', n_features=len(usable))
