@@ -6,3 +6,5 @@ venv/
 .env
 .DS_Store
 Thumbs.db
+/in_class_exercises/
+/prep_exercises/
