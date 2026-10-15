@@ -48,7 +48,7 @@
       "fit_windows": [[353, 392], [345, 400], [341, 404]],
       "expected_channel": 370,
       "background_order": 2,
-      "enabled": false
+      "enabled": true
     }
   ]
 }

@@ -1,13 +1,10 @@
 """
 Instructions on using this code for different calibrations:
 
-For overnight calibrations, first inspect the spectrum and decide which spectral features to enable in calibration_features.json.
-Then, run the calibration.
-
-For daily calibrations, use the results of the overnight calibration as a reference.
+First, inspect your calibration spectrum to determine what spectral features to enable in calibration_features.json:
+    python analysis/mca_calibration_pipeline.py inspect --spe data.Spe --output results
 
 Overnight:
-    python analysis/mca_calibration_pipeline.py inspect --spe data.Spe --output results
     python analysis/mca_calibration_pipeline.py overnight --spe data.Spe \
         --config calibration_features.json --output results
 Daily:
@@ -319,7 +316,7 @@ def fit_calibration_line(feature_rows):
     
     ch = np.array([r['mu_ch'] for r in feature_rows], dtype=float)
     E = np.array([r['energy_keV'] for r in feature_rows], dtype=float)
-    sig = np.array([r['mu_total_ch'] for r in feature_rows], dtype=float)
+    sig = np.array([r['mu_stat_ch'] for r in feature_rows], dtype=float)
 
     if len(np.unique(E)) < 2 or np.any(~np.isfinite(sig)) or np.any(sig <= 0):
         raise ValueError('Energies must be distinct and uncertainties finite/positive')
@@ -454,10 +451,10 @@ def run_overnight(args):
 
             for point, row in zip(zip(ch, en), rows):
                 ax.annotate(row.get('plot_label', row['name']), point,
-                            xytext=(-10, 10), textcoords='offset points',
+                            xytext=(-3, 10), textcoords='offset points',
                             ha='right', va='bottom', fontsize=8, color='0.25')
 
-            xv = np.linspace(min(ch)-10, max(ch)+10, 200)
+            xv = np.linspace(0, max(ch)+10, 200)
             ax.plot(xv, line['slope_keV_per_channel']*xv+line['offset_keV'],
                     color='cornflowerblue', lw=0.8, label='Linear fit', zorder=3)
 
@@ -478,14 +475,22 @@ def run_overnight(args):
 
             heading, live_time = calibration_run_label(s, 'overnight')
             ax.set(xlabel='MCA channel', ylabel='Deposited energy (keV)', title=f'{heading}\n{live_time}')
-            ax.set_xlim(min(ch) - 60, max(ch) + 15)
-            ax.set_ylim(min(en) - 18, max(en) + 28)
+            ax.set_xlim(0, max(ch) + 15)
+            ax.set_ylim(0, max(en) + 30)
             ax.legend(frameon=False, loc='lower right', fontsize=8)
 
             if line['dof'] > 0:
                 ax.text(
                     0.03, 0.97,
-                    rf'$\chi^2/\mathrm{{dof}} = {line["chi2"]/line["dof"]:.3f}$',
+                    (
+                        rf'$\chi^2/\mathrm{{dof}} = {line["chi2"]/line["dof"]:.3f}$'
+                        '\n'
+                        rf'$a = ({line["slope_keV_per_channel"]:.3f} \pm '
+                        rf'{line["slope_err_keV_per_channel"]:.3f})$ keV/channel'
+                        '\n'
+                        rf'$b = ({line["offset_keV"]:.3f} \pm '
+                        rf'{line["offset_err_keV"]:.3f})$ keV'
+                    ),
                     transform=ax.transAxes,
                     va='top',
                     fontsize=9,
@@ -519,14 +524,14 @@ def run_daily(args):
     features = reference['features']
     cs_ref = next((f for f in features if f['kind'] == 'cs_k_complex'), None)
     ba_ref = next((f for f in features if f['kind'] == 'doublet'), None)
-    peak53_ref = next((f for f in features if f['kind'] == 'gaussian'
-                       and np.isclose(f['energy_keV'], 53.1625, atol=0.1)), None)
-
     if cs_ref is None or ba_ref is None:
         raise ValueError('Overnight reference must contain the Cs K and 81 keV fits.')
 
     if cs_ref.get('beta_scale') is None:
         raise ValueError('Cs K fit needs an overnight K-beta amplitude scale.')
+
+    if not np.isclose(cs_ref['energy_keV'], CS_K_ALPHA1, atol=0.001):
+        raise ValueError('Overnight Cs K-alpha1 reference must use 30.97313 keV.')
 
     scale = getattr(args, 'channel_scale', 1.0)
     shift = getattr(args, 'channel_shift', 0.0)
@@ -537,9 +542,11 @@ def run_daily(args):
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
 
-    paths = sorted(set(glob.glob(args.files, recursive=True)))
+    patterns = args.files if isinstance(args.files, list) else [args.files]
+    paths = sorted(set(path for pattern in patterns
+                       for path in glob.glob(pattern, recursive=True)))
     if not paths:
-        raise FileNotFoundError(f'No files matched {args.files}')
+        raise FileNotFoundError(f'No files matched {patterns}')
 
     calibration_rows = []
     feature_rows = []
@@ -581,8 +588,12 @@ def run_daily(args):
         name = Path(path).stem
         fitted = []
 
+        run_info = parse_run_name(spectrum['path'])
+        date = (run_info or {}).get('date') or spectrum.get('measurement_date')
+
         row = {
             'file': str(path),
+            'date': date,
             'live_time_s': spectrum['live_time_s'],
             'method': 'daily_independent_multipoint',
         }
@@ -596,8 +607,7 @@ def run_daily(args):
             for iteration in range(2):
                 fitted = []
 
-                for ref in [cs_ref, ba_ref] + ([peak53_ref] if getattr(args, 'include_53', False)
-                                                and peak53_ref is not None else []):
+                for ref in [cs_ref, ba_ref]:
                     try:
                         fit = fit_daily_peak(spectrum, ref, slope, anchor_shift)
                         window_shifts = []
@@ -618,7 +628,7 @@ def run_daily(args):
                                                           window_unc**2 + reference_unc**2))
 
                         width_ratio = fit['width_ch'] / (scale * ref['width_ch'])
-                        # Reject unconstrained fits before calibrating.
+                        # Reject unconstrained fits before calibrating
                         is_valid = (not fit['bound_hit']
                                     and fit['reduced_deviance'] < 5.0
                                     and np.isfinite(fit['mu_total_ch'])
@@ -639,7 +649,8 @@ def run_daily(args):
                 if len(usable) < 2:
                     break
 
-                line = fit_calibration_line(usable)
+                daily_points = [dict(f, mu_stat_ch=f['mu_total_ch']) for f in usable]
+                line = fit_calibration_line(daily_points)
                 slope = line['slope_keV_per_channel']
 
             for fit in fitted:
@@ -656,6 +667,79 @@ def run_daily(args):
                 row.update(status='PROVISIONAL',
                            gain_ratio_vs_overnight=reference_slope / slope,
                            used_features='; '.join(f['name'] for f in usable))
+
+                ch = np.array([f['mu_ch'] for f in usable])
+                en = np.array([f['energy_keV'] for f in usable])
+                er = np.array([f['mu_total_ch'] for f in usable])
+
+                fig, ax = plt.subplots(figsize=(6.8, 4.5))
+                ax.errorbar(ch, en, xerr=er, fmt='o', markersize=3,
+                            capsize=4, capthick=1.1, elinewidth=1.3,
+                            color='midnightblue', ecolor='midnightblue',
+                            label='Calibration points', zorder=5)
+
+                for point, fit in zip(zip(ch, en), usable):
+                    ax.annotate(fit.get('plot_label', fit['name']), point,
+                                xytext=(-3, 10), textcoords='offset points',
+                                ha='right', va='bottom', fontsize=8, color='0.25')
+
+                xv = np.linspace(0, max(ch) + 10, 200)
+                energy_fit = line['slope_keV_per_channel'] * xv + line['offset_keV']
+                ax.plot(xv, energy_fit, color='cornflowerblue', lw=0.8,
+                        label='Linear fit', zorder=3)
+
+                cov = np.array(line['covariance_keV'])
+                energy_err = np.sqrt(np.maximum(
+                    cov[0, 0] * xv**2 + 2 * cov[0, 1] * xv + cov[1, 1], 0
+                ))
+
+                ax.fill_between(xv, energy_fit - energy_err, energy_fit + energy_err,
+                                color='cornflowerblue', alpha=0.45, zorder=2,
+                                label=r'$1\sigma$ fit uncertainty')
+
+                heading, live_time = calibration_run_label(spectrum, 'daily')
+                ax.set(xlabel='MCA channel', ylabel='Deposited energy (keV)',
+                       title=f'{heading}\n{live_time}')
+                
+                ax.set_xlim(0, max(ch) + 15)
+                ax.set_ylim(0, max(en) + 30)
+
+                ax.legend(frameon=False, loc='lower right', fontsize=8)
+
+                ax.text(
+                    0.03, 0.97,
+                    (
+                        rf'$a = ({line["slope_keV_per_channel"]:.6f} \pm '
+                        rf'{line["slope_err_keV_per_channel"]:.6f})$ keV/channel'
+                        '\n'
+                        rf'$b = ({line["offset_keV"]:.4f} \pm '
+                        rf'{line["offset_err_keV"]:.4f})$ keV'
+                    ),
+                    transform=ax.transAxes,
+                    va='top',
+                    fontsize=9,
+                    bbox=dict(
+                        facecolor='white',
+                        edgecolor='0.8',
+                        boxstyle='round,pad=0.35',
+                        alpha=0.95
+                    )
+                )
+
+                fig.tight_layout()
+                fig.savefig(out / f'{name}_calibration_line.png', dpi=180)
+                plt.close(fig)
+
+                daily_result = {
+                    'file': str(path),
+                    'date': date,
+                    'live_time_s': spectrum['live_time_s'],
+                    'linear_calibration': line,
+                    'features': [serializable_fit(f) for f in usable],
+                }
+                (out / f'{name}_calibration.json').write_text(
+                    json.dumps(daily_result, indent=2)
+                )
 
                 print(f'{name}: a = {slope:.6f} keV/channel, '
                       f'b = {line["offset_keV"]:.3f} keV '
@@ -689,9 +773,9 @@ def main():
 
     t = sub.add_parser('daily')
     t.add_argument('--reference', required=True)
-    t.add_argument('--files', required=True, help='Glob string, e.g. data/raw/calibration/*/*.Spe')
+    t.add_argument('--files', nargs='+', required=True,
+                   help='One or more .Spe files or quoted glob patterns')
     t.add_argument('--output', required=True)
-    t.add_argument('--include-53', action='store_true')
     t.add_argument('--channel-scale', type=float, default=1.0)
     t.add_argument('--channel-shift', type=float, default=0.0)
 
