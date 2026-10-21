@@ -303,6 +303,143 @@ def diagnostic_plot(spectrum, fitted, output_path, run_type='overnight'):
     fig.savefig(output_path, dpi=200)
     plt.close(fig)
 
+def paper_calibration_figure(spectrum, fitted_features, output_dir):
+    """Publication figure: overview spectrum plus four boxed fitted features.
+
+    Reuses the fitted parameter arrays from fit_feature (no refitting).
+    Requires four successfully fitted overnight features.
+    AI-assisted figure layout; verify all features and caption independently.
+    """
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Rectangle
+    from matplotlib.ticker import FuncFormatter, MaxNLocator
+
+    if len(fitted_features) != 4:
+        warnings.warn(
+            f"Composite paper figure requires four fitted features; "
+            f"got {len(fitted_features)}. Skipping."
+        )
+        return
+
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    fitted_features = sorted(fitted_features, key=lambda fit: fit['mu_ch'])
+    letters = ['A', 'B', 'C', 'D']
+
+    raw_color = '0.72'
+    point_color = 'black'
+    fit_color = 'cornflowerblue'
+
+    def energy_label(fit):
+        energy = fit['energy_keV']
+        if energy >= 100:
+            return f'{energy:.0f} keV'
+        if energy >= 10:
+            return f'{energy:.0f} keV'
+        return f'{energy:.1f} keV'
+
+    def count_tick_label(y, _pos):
+        if abs(y) >= 1e6:
+            return f'{y / 1e6:g}M'
+        if abs(y) >= 1e3:
+            return f'{y / 1e3:g}k'
+        return f'{y:g}'
+
+    plot_style = {
+        'font.family': 'sans-serif',
+        'font.size': 8,
+        'axes.labelsize': 8,
+        'axes.titlesize': 8,
+        'xtick.labelsize': 7,
+        'ytick.labelsize': 7,
+        'pdf.fonttype': 42,
+        'savefig.facecolor': 'white',
+    }
+
+    with plt.rc_context(plot_style):
+        fig = plt.figure(figsize=(7.2, 4.45))
+        gs = fig.add_gridspec(
+            2, 4, height_ratios=(1.28, 1.0),
+            left=0.085, right=0.985, bottom=0.14, top=0.93,
+            hspace=0.26, wspace=0.26,
+        )
+        ax_main = fig.add_subplot(gs[0, :])
+        zoom_axes = [fig.add_subplot(gs[1, i]) for i in range(4)]
+
+        channels = np.asarray(spectrum['channels'], dtype=float)
+        counts = np.asarray(spectrum['counts'], dtype=float)
+
+        ax_main.step(channels, counts, where='mid', lw=1.0,
+                     color=raw_color, zorder=1)
+        ax_main.set_yscale('symlog', linthresh=1.0)
+        ax_main.set_xlim(float(channels.min()), float(channels.max()))
+        ax_main.set_ylim(0, max(float(np.max(counts)) * 1.25, 10.0))
+        ax_main.set_ylabel('Counts per channel')
+        ax_main.tick_params(axis='both', length=3.0, width=0.7)
+
+        legend_handles = [
+            Line2D([], [], color=raw_color, lw=1.0, label='Raw spectrum'),
+            Line2D([], [], color=point_color, marker='o', linestyle='None',
+                   markersize=3.5, label='Data in fit region'),
+            Line2D([], [], color=fit_color, lw=1.5, label='Fitted line'),
+        ]
+        ax_main.legend(handles=legend_handles, fontsize=7.5, ncol=1,
+                       loc='upper right', frameon=False,
+                       handlelength=2.0, borderpad=0.15, labelspacing=0.35)
+
+        for i, (fit, ax_zoom) in enumerate(zip(fitted_features, zoom_axes)):
+            x = np.asarray(fit['x'], dtype=float)
+            y = np.asarray(fit['y'], dtype=float)
+            lower, upper = float(x.min()), float(x.max())
+            dense = np.linspace(lower, upper, 600)
+            signal, background = model_components(
+                dense,
+                fit['params'], fit['kind'], fit['center'],
+                fit['slope_guess'], fit.get('fixed_width'),
+                fit['background_order'], fit.get('fixed_beta_scale'),
+            )
+            total = signal + background
+
+            # bottom feature panel
+            ax_zoom.step(x, y, where='mid', lw=1.0, color=raw_color, zorder=1)
+            ax_zoom.plot(x, y, 'o', ms=3.0, color=point_color, zorder=2)
+            ax_zoom.plot(dense, total, color=fit_color, lw=1.5, zorder=3)
+            ax_zoom.set_xlim(lower, upper)
+            ax_zoom.set_ylim(0, 1.12 * max(float(y.max()), float(total.max()), 1.0))
+            ax_zoom.set_title(f'({letters[i]}) {energy_label(fit)}', pad=2.5)
+            ax_zoom.yaxis.set_major_locator(MaxNLocator(nbins=3))
+            ax_zoom.yaxis.set_major_formatter(FuncFormatter(count_tick_label))
+            ax_zoom.xaxis.set_major_locator(MaxNLocator(nbins=4, integer=True))
+            ax_zoom.tick_params(axis='both', length=2.5, width=0.65,
+                                pad=2.2, labelsize=6.7)
+            for spine in ax_zoom.spines.values():
+                spine.set_linewidth(0.7)
+
+            # matching boxed region on overview spectrum
+            raw_mask = (channels >= lower) & (channels <= upper)
+            local_counts = counts[raw_mask] if np.any(raw_mask) else y
+            box_bottom = max(0.2, float(np.percentile(local_counts, 3)) * 0.8)
+            box_top = max(float(np.max(local_counts)) * 1.03, box_bottom + 1.0)
+            box = Rectangle((lower, box_bottom), upper - lower, box_top - box_bottom,
+                            facecolor='none', edgecolor='black', linewidth=1.0, zorder=4)
+            ax_main.add_patch(box)
+            ax_main.text(lower + 0.10 * (upper - lower), box_top / 1.03,
+                         f'({letters[i]})',
+                         ha='left', va='top', fontsize=7.5,
+                         bbox=dict(facecolor='white', edgecolor='none', pad=0.3, alpha=0.95),
+                         zorder=5)
+
+        zoom_axes[0].set_ylabel('Counts / channel', fontsize=7.6)
+        fig.supxlabel('MCA channel', y=0.055, fontsize=8)
+
+        basename = output_dir / 'ba133_spectrum_fits'
+        fig.savefig(basename.with_suffix('.pdf'), bbox_inches='tight', pad_inches=0.025)
+        fig.savefig(basename.with_suffix('.png'), dpi=350,
+                    bbox_inches='tight', pad_inches=0.025)
+        plt.close(fig)
+        print(f'Saved paper figure: {basename}.pdf and {basename}.png')
+
 def serializable_fit(fitted):
     return {k: v for k, v in fitted.items() if k not in
             {'x', 'y', 'prediction', 'params', 'center', 'slope_guess', 'background_order', 'fixed_width', 'fixed_beta_scale'}}
@@ -390,6 +527,7 @@ def run_overnight(args):
     active = [f for f in config['features'] if f.get('enabled', False)]
 
     rows = []
+    paper_fits = []
     for f in active:
         try:
             base = fit_feature(s, f, args.slope_guess)
@@ -420,6 +558,7 @@ def run_overnight(args):
             base['mu_total_ch'] = row['mu_total_ch']
 
             rows.append(row)
+            paper_fits.append(base)
 
             diagnostic_plot(s, base, out/f"feature_{f['name']}.png", run_type='overnight')
 
@@ -428,6 +567,13 @@ def run_overnight(args):
                   f"{row['reduced_deviance']:.2f}; bound={row['bound_hit']}")
         except (ValueError, RuntimeError) as exc:
             warnings.warn(f"Skipping {f['name']}: {exc}")
+
+    # Save a paper-ready composite separately from the full diagnostics.
+    # With the script inside relativistic_dynamics/analysis/ this resolves
+    # to relativistic_dynamics/paper_figures/.
+    paper_dir = (Path(args.paper_dir) if args.paper_dir else
+                 Path(__file__).resolve().parent.parent / 'paper_figures')
+    paper_calibration_figure(s, paper_fits, paper_dir)
 
     pd.DataFrame(rows).to_csv(out/'overnight_features.csv', index=False)
     result = dict(reference_spectrum=str(s['path']), live_time_s=s['live_time_s'],
@@ -770,6 +916,8 @@ def main():
     t.add_argument('--config', required=True)
     t.add_argument('--output', required=True)
     t.add_argument('--slope-guess', type=float, default=.56)
+    t.add_argument('--paper-dir', default=None,
+                   help='Folder for composite paper figure (default: ../paper_figures relative to analysis/)')
 
     t = sub.add_parser('daily')
     t.add_argument('--reference', required=True)
@@ -790,5 +938,630 @@ def main():
         run_daily(args)
 
 
+# ======================================================================
+# ======================================================================
+#
+#                    PAPER FIGURES: MCA CALIBRATION
+#
+#   1) Composite figure:
+#      - top: overnight raw spectrum with feature boxes (a)-(d)
+#      - bottom: the 4 individual feature fits in a 2x2 layout
+#
+#   2) Separate linear calibration figure:
+#      - deposited energy vs fitted channel
+#
+# ======================================================================
+# ======================================================================
+
 if __name__ == '__main__':
-    main()
+
+    # Small parser just to recover the arguments used for the overnight run
+    paper_parser = argparse.ArgumentParser(add_help=False)
+    paper_parser.add_argument('mode', nargs='?')
+    paper_parser.add_argument('--spe')
+    paper_parser.add_argument('--config')
+    paper_parser.add_argument('--output')
+    paper_parser.add_argument('--slope-guess', type=float, default=0.56)
+
+    paper_args, _ = paper_parser.parse_known_args()
+
+    # Only make these paper figures for overnight calibration runs
+    if (
+        paper_args.mode == 'overnight'
+        and paper_args.spe is not None
+        and paper_args.config is not None
+        and paper_args.output is not None
+    ):
+        from matplotlib.patches import Rectangle
+
+        paper_dir = Path("/home/rck67/jlab/relativistic_dynamics/figures/paper_figures")
+        paper_dir.mkdir(parents=True, exist_ok=True)
+
+        # ------------------------------------------------------------------
+        # Reload the spectrum and refit the active overnight features
+        # ------------------------------------------------------------------
+        spectrum = read_spe(paper_args.spe)
+        config = json.loads(Path(paper_args.config).read_text())
+        active = [f for f in config['features'] if f.get('enabled', False)]
+
+        rows = []
+        fitted_objects = []
+
+        for f in active:
+            try:
+                base = fit_feature(spectrum, f, paper_args.slope_guess)
+
+                shifts = []
+                for trial_window in f.get('fit_windows', []):
+                    alt_f = dict(f, window=trial_window)
+                    try:
+                        alt = fit_feature(spectrum, alt_f, paper_args.slope_guess)
+                        shifts.append(alt['mu_ch'] - base['mu_ch'])
+                    except (ValueError, RuntimeError):
+                        warnings.warn(f"Window {trial_window} failed for {f['name']}")
+
+                window_sys = max([abs(v) for v in shifts] + [0])
+                extra_sys = float(f.get('systematic_centroid_ch', 0))
+                sys_ch = float(np.hypot(window_sys, extra_sys))
+
+                row = serializable_fit(base)
+                row['mu_window_sys_ch'] = float(window_sys)
+                row['mu_extra_sys_ch'] = extra_sys
+                row['mu_sys_ch'] = sys_ch
+                row['mu_total_ch'] = float(np.hypot(base['mu_stat_ch'], sys_ch))
+                row['fit_windows_ch'] = f.get('fit_windows', [])
+                row['window_shifts_ch'] = shifts
+
+                # preserve window and plotting metadata for the paper figure
+                row['window'] = f['window']
+                row['expected_channel'] = f.get('expected_channel', None)
+
+                base['mu_window_sys_ch'] = window_sys
+                base['mu_total_ch'] = row['mu_total_ch']
+                base['window'] = f['window']
+
+                rows.append(row)
+                fitted_objects.append(base)
+
+            except (ValueError, RuntimeError) as exc:
+                warnings.warn(f"Skipping {f['name']}: {exc}")
+
+        if len(rows) < 4:
+            raise ValueError(
+                f"Need at least 4 successfully fitted overnight features for the composite figure; found {len(rows)}."
+            )
+
+        # Sort left-to-right in channel so labels (a)-(d) match the spectrum order
+        sort_order = np.argsort([r['mu_ch'] for r in rows])
+        rows = [rows[i] for i in sort_order]
+        fitted_objects = [fitted_objects[i] for i in sort_order]
+
+        # If more than 4 are active, use the first 4 in channel order for the composite panel figure
+        rows4 = rows[:4]
+        fitted4 = fitted_objects[:4]
+        panel_letters = ['a', 'b', 'c', 'd']
+
+        # ------------------------------------------------------------------
+        # Common formatting
+        # ------------------------------------------------------------------
+        label_size = 12
+        tick_size = 10
+        legend_size = 9
+        stats_size = 8.7
+        panel_size = 14
+
+        raw_ch = np.asarray(spectrum['channels'], dtype=float)
+        raw_ct = np.asarray(spectrum['counts'], dtype=float)
+
+# ======================================================================
+# ======================================================================
+#
+#             FIGURE 1: OVERNIGHT MCA CALIBRATION
+#
+# ======================================================================
+# ======================================================================
+
+    from matplotlib.patches import Rectangle
+    from matplotlib.lines import Line2D
+    from matplotlib.ticker import MaxNLocator, FuncFormatter
+
+    fig_cal = plt.figure(figsize=(13.2, 6.0))
+
+    gs = fig_cal.add_gridspec(
+        2, 4,
+        height_ratios=[1.05, 1.15],
+        hspace=0.32,
+        wspace=0.16
+    )
+
+    # Full spectrum
+    ax_top = fig_cal.add_subplot(gs[0, :])
+
+    # Four feature fits in one row
+    feature_axes = [
+        fig_cal.add_subplot(gs[1, i])
+        for i in range(4)
+    ]
+
+    fig_cal.subplots_adjust(
+        left=0.085,
+        right=0.990,
+        top=0.975,
+        bottom=0.18
+    )
+
+    raw_ch = np.asarray(spectrum["channels"], dtype=float)
+    raw_ct = np.asarray(spectrum["counts"], dtype=float)
+
+
+    # ======================================================================
+    # TOP PANEL: RAW OVERNIGHT CALIBRATION SPECTRUM
+    # ======================================================================
+
+    # Only display channels 0-800
+    spectrum_mask = (raw_ch >= 0) & (raw_ch <= 800)
+
+    ax_top.step(
+        raw_ch[spectrum_mask],
+        raw_ct[spectrum_mask],
+        where="mid",
+        lw=1.0,
+        color="midnightblue"
+    )
+
+    ax_top.set_xlabel(
+        "MCA channel",
+        fontsize=11
+    )
+
+    ax_top.set_ylabel(
+        "Counts per channel",
+        fontsize=11
+    )
+
+    ax_top.set_xlim(0, 800)
+    ax_top.set_yscale("symlog", linthresh=1)
+
+    ax_top.tick_params(labelsize=9)
+    ax_top.grid(alpha=0.12)
+
+
+    # ----------------------------------------------------------------------
+    # Box the four fitted features
+    # ----------------------------------------------------------------------
+
+    box_tops = []
+
+    for letter, row in zip(panel_letters, rows4):
+
+        lower, upper = map(float, row["window"])
+
+        mask = (raw_ch >= lower) & (raw_ch <= upper)
+
+        if not np.any(mask):
+            raise ValueError(
+                f"No spectrum bins found in window {lower}-{upper}"
+            )
+
+        local_counts = raw_ct[mask]
+        positive = local_counts[local_counts > 0]
+
+        if len(positive) > 0:
+            y0 = max(
+                1.0,
+                np.percentile(positive, 5) * 0.7
+            )
+        else:
+            y0 = 1.0
+
+        y1 = max(
+            local_counts.max() * 1.20,
+            y0 * 2.0
+        )
+
+        box_tops.append(y1)
+
+        rect = Rectangle(
+            (lower, y0),
+            upper - lower,
+            y1 - y0,
+            fill=False,
+            edgecolor="black",
+            linewidth=1.8,
+            zorder=6
+        )
+
+        ax_top.add_patch(rect)
+
+        # Bold labels above boxes
+        ax_top.annotate(
+            f"({letter})",
+            xy=((lower + upper) / 2, y1),
+            xytext=(0, 5),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=11,
+            fontweight="bold",
+            zorder=7
+        )
+
+    # Additional space at top for labels
+    ax_top.set_ylim(
+        bottom=0,
+        top=max(
+            np.max(raw_ct[spectrum_mask]),
+            max(box_tops)
+        ) * 2.0
+    )
+
+
+    # ======================================================================
+    # BOTTOM ROW: FOUR INDIVIDUAL FEATURE FITS
+    # ======================================================================
+
+    centroid_symbols = {
+        "gaussian": r"\mu",
+        "cs_k_complex": r"\mu_{\alpha 1}",
+        "doublet": r"\mu_{81}",
+        "edge": r"n_{\mathrm{edge}}"
+    }
+
+    for ax, fitted, row, letter in zip(
+        feature_axes,
+        fitted4,
+        rows4,
+        panel_letters
+    ):
+
+        x = np.asarray(fitted["x"], dtype=float)
+        y = np.asarray(fitted["y"], dtype=float)
+
+        lower = float(x.min())
+        upper = float(x.max())
+
+        # Keep the zoom focused on the fitted feature
+        padding = max(4, 0.20 * (upper - lower))
+
+        x_lower = max(raw_ch.min(), lower - padding)
+        x_upper = min(raw_ch.max(), upper + padding)
+
+        mask = (
+            (raw_ch >= x_lower)
+            & (raw_ch <= x_upper)
+        )
+
+        dense = np.linspace(lower, upper, 500)
+
+        # Reconstruct the fitted model
+        signal, bg = model_components(
+            dense,
+            fitted["params"],
+            fitted["kind"],
+            fitted["center"],
+            fitted["slope_guess"],
+            fitted.get("fixed_width"),
+            fitted["background_order"],
+            fitted.get("fixed_beta_scale")
+        )
+
+        total_model = signal + bg
+
+
+        # ------------------------------------------------------------------
+        # Fitted region
+        # ------------------------------------------------------------------
+
+        ax.axvspan(
+            lower,
+            upper,
+            color="0.92",
+            alpha=0.45,
+            zorder=0
+        )
+
+
+        # ------------------------------------------------------------------
+        # Raw spectrum
+        # ------------------------------------------------------------------
+
+        ax.step(
+            raw_ch[mask],
+            raw_ct[mask],
+            where="mid",
+            color="0.72",
+            linewidth=0.9,
+            zorder=1
+        )
+
+
+        # ------------------------------------------------------------------
+        # Data points used in the fit
+        # Smaller markers to make uncertainties more visible
+        # ------------------------------------------------------------------
+
+        ax.errorbar(
+            x, y,
+            yerr=np.sqrt(np.maximum(y, 1)),
+            fmt="o",
+            markersize=1.8,
+            color="black",
+            ecolor="black",
+            elinewidth=0.6,
+            capsize=0,
+            zorder=5
+        )
+
+
+        # ------------------------------------------------------------------
+        # Total fitted model
+        # ------------------------------------------------------------------
+
+        ax.plot(
+            dense,
+            total_model,
+            color="cornflowerblue",
+            linewidth=1.7,
+            zorder=4
+        )
+
+
+        # ------------------------------------------------------------------
+        # Background model
+        # ------------------------------------------------------------------
+
+        ax.plot(
+            dense,
+            bg,
+            linestyle="--",
+            color="mediumpurple",
+            linewidth=1.3,
+            zorder=3
+        )
+
+
+        # ------------------------------------------------------------------
+        # Fitted channel
+        # ------------------------------------------------------------------
+
+        mu = fitted["mu_ch"]
+
+        ax.axvline(
+            mu,
+            color="black",
+            linestyle="--",
+            linewidth=1.1,
+            alpha=0.75,
+            zorder=2
+        )
+
+
+        # ==================================================================
+        # FORMATTING
+        # ==================================================================
+
+        # Only display bold panel letters, without feature names
+        ax.set_title(
+            f"({letter})",
+            fontsize=12,
+            fontweight="bold",
+            loc="left",
+            pad=4
+        )
+
+        ax.set_xlabel(
+            "MCA channel",
+            fontsize=10
+        )
+
+        ax.set_xlim(x_lower, x_upper)
+
+        # ------------------------------------------------------------------
+        # Independently scale each panel
+        # ------------------------------------------------------------------
+
+        local_max = max(
+            np.max(raw_ct[mask]),
+            np.max(total_model),
+            np.max(y + np.sqrt(np.maximum(y, 1)))
+        )
+
+        # Extra space BELOW zero for panel (a), so the statistics
+        # can sit beneath the feature without hiding the data.
+        if letter == "a":
+            y_bottom = -0.30 * local_max
+            y_top = 1.12 * local_max
+
+        elif letter == "b":
+            y_bottom = 0.4
+            y_top = 1.25 * local_max
+
+        else:
+            y_bottom = 0
+            y_top = 1.12 * local_max
+
+        ax.set_ylim(y_bottom, y_top)
+
+        # ------------------------------------------------------------------
+        # Scientific count scaling
+        #
+        # Rather than using Matplotlib's automatic 1e5 label
+        # above each plot, display scaled tick labels with
+        # the multiplier placed beside the y-axis.
+        # ------------------------------------------------------------------
+
+        exponent = int(np.floor(np.log10(local_max)))
+        count_scale = 10.0 ** exponent
+
+        ax.yaxis.set_major_formatter(
+            FuncFormatter(
+                lambda value, pos, s=count_scale:
+                    f"{value/s:g}" if value >= -1e-9 else ""
+            )
+        )
+
+        ax.set_ylabel(
+            rf"$\times 10^{{{exponent}}}$",
+            fontsize=8,
+            rotation=90,
+            labelpad=0
+        )
+
+        # Set ticks at readable intervals; no negative count labels
+        locator = MaxNLocator(nbins=4)
+
+        y_ticks = locator.tick_values(0, y_top)
+        y_ticks = y_ticks[
+            (y_ticks >= 0) & (y_ticks <= y_top)
+        ]
+
+        ax.set_yticks(y_ticks)
+
+        ax.xaxis.set_major_locator(
+            MaxNLocator(nbins=4)
+        )
+
+        ax.tick_params(
+            axis="both",
+            labelsize=8,
+            pad=2
+        )
+
+        ax.grid(alpha=0.13)
+
+
+        # ==================================================================
+        # FIT STATISTICS
+        # ==================================================================
+
+        stat = fitted["mu_stat_ch"]
+        chi2dof = fitted["reduced_deviance"]
+        symbol = centroid_symbols[fitted["kind"]]
+
+        stats_text = (
+            rf"${symbol} = {mu:.2f}"
+            rf"\pm {stat:.2f}_{{\mathrm{{stat}}}}$"
+            "\n"
+            rf"$D/\mathrm{{dof}} = {chi2dof:.2f}$"
+        )
+
+        # Consistent bottom-left placement
+        ax.text(
+            0.025,
+            0.035,
+            stats_text,
+            transform=ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=7.7,
+            linespacing=1.3,
+            bbox={
+                "facecolor": "white",
+                "edgecolor": "0.8",
+                "alpha": 0.94,
+                "boxstyle": "round,pad=0.3"
+            },
+            zorder=8
+        )
+
+
+    # ======================================================================
+    # SHARED Y-AXIS TITLE FOR BOTTOM PANELS
+    # ======================================================================
+
+    # Place shared label centered vertically along bottom row
+    bottom_position = feature_axes[0].get_position()
+
+    fig_cal.text(
+        0.04,
+        bottom_position.y0 + bottom_position.height / 2,
+        "Counts per channel",
+        va="center",
+        ha="center",
+        rotation=90,
+        fontsize=11
+    )
+
+
+    # ======================================================================
+    # SHARED LEGEND
+    # ======================================================================
+
+    legend_handles = [
+        Line2D(
+            [0], [0],
+            color="0.72",
+            lw=1.2,
+            label="Raw spectrum"
+        ),
+        Line2D(
+            [0], [0],
+            color="black",
+            marker="o",
+            linestyle="none",
+            markersize=3,
+            label="Data used in fit"
+        ),
+        Line2D(
+            [0], [0],
+            color="cornflowerblue",
+            lw=1.8,
+            label="Fitted model"
+        ),
+        Line2D(
+            [0], [0],
+            color="mediumpurple",
+            ls="--",
+            lw=1.3,
+            label="Background"
+        ),
+        Line2D(
+            [0], [0],
+            color="black",
+            ls="--",
+            lw=1.1,
+            label="Fitted channel"
+        )
+    ]
+
+    fig_cal.legend(
+        handles=legend_handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.015),
+        ncol=5,
+        fontsize=9,
+        frameon=False,
+        columnspacing=1.8,
+        handlelength=2.0
+    )
+
+
+    # ======================================================================
+    # SAVE FIGURE
+    # ======================================================================
+
+    composite_pdf = (
+        paper_dir / "overnight_calibration_composite_paper.pdf"
+    )
+
+    composite_png = (
+        paper_dir / "overnight_calibration_composite_paper.png"
+    )
+
+    fig_cal.savefig(
+        composite_pdf,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    fig_cal.savefig(
+        composite_png,
+        dpi=300,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    print(f"Saved: {composite_pdf}")
+    print(f"Saved: {composite_png}")
+
+    plt.close(fig_cal)

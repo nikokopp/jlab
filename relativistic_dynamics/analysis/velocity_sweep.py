@@ -422,21 +422,334 @@ def combine_velocity_sweep_results(folder_dir):
 
     return data
 
+# ======================================================================
+# ======================================================================
+#
+#                   PAPER FIGURE
+#              TRAPEZOID FIT AT 120 G
+#
+# ======================================================================
+# ======================================================================
+
 if __name__ == "__main__":
-    folder = "/home/rck67/jlab/relativistic_dynamics/data/processed/trapezoid_fits"
 
-    combine_velocity_sweep_results(folder)
-    # folder = "/home/rck67/jlab/relativistic_dynamics/data/processed/velocity_sweep"
-    # figure_dir = "/home/rck67/jlab/relativistic_dynamics/figures/velocity_sweep"
+    root = Path("/home/rck67/jlab/relativistic_dynamics")
 
-    # b_fields = [70.0, 80.0, 89.4, 91.9, 100.0, 110.0, 120.0]
+    raw_dir = root / "data/processed/velocity_sweep"
+    results_file = (
+        root / "data/processed/trapezoid_fits/velocity_sweep_results.csv"
+    )
+    paper_dir = root / "figures/paper_figures"
+    paper_dir.mkdir(parents=True, exist_ok=True)
 
-    # for i in b_fields:
-    #     plot_velocity_sweep(
-    #         folder = folder,
-    #         figure_dir = figure_dir,
-    #         B_target = i,
-    #         channel_min = 0,
-    #         channel_max = 2048
-    #     )
+    B_target = 120.0
+    channel_min = 0
+    channel_max = 2048
+
+    # ------------------------------------------------------------------
+    # Load fitted parameters for nominal B = 120 G
+    # ------------------------------------------------------------------
+
+    fit_table = pd.read_csv(results_file)
+
+    selected = fit_table[
+        np.isclose(fit_table["B_G"], B_target)
+    ]
+
+    if len(selected) != 1:
+        raise ValueError("Expected exactly one fit for B = 120 G.")
+
+    fit_row = selected.iloc[0]
+
+    B_corrected = fit_row["B_corrected_G"]
+    V_opt = fit_row["V_opt_kV"]
+    V_opt_err = fit_row["V_opt_stat_err_kV"]
+
+    fit_params = [
+        fit_row["background_Hz"],
+        fit_row["amplitude_Hz"],
+        V_opt,
+        fit_row["flat_width_kV"] / 2,
+        fit_row["rise_width_kV"],
+        fit_row["fall_width_kV"]
+    ]
+
+    # ------------------------------------------------------------------
+    # Load original measurements at 120 G
+    # ------------------------------------------------------------------
+
+    records = []
+
+    for filename in sorted(raw_dir.glob("*.Spe")):
+
+        run_info = parse_run_name(filename)
+
+        if run_info is None:
+            continue
+
+        if not np.isclose(run_info["B_G"], B_target):
+            continue
+
+        spectrum = read_spe(filename)
+        stats = roi_stats(spectrum, channel_min, channel_max)
+
+        records.append({
+            "voltage": run_info["Vsel_kV"],
+            "rate": stats["count_rate_Hz"],
+            "rate_err": stats["count_rate_error_Hz"],
+            "counts": stats["total_counts"],
+            "live_time": spectrum["live_time_s"]
+        })
+
+    if len(records) <= 6:
+        raise ValueError(
+            f"Found only {len(records)} measurements at 120 G. "
+            f"Check the raw .Spe directory: {raw_dir}"
+        )
+
+    measurements = pd.DataFrame(records).sort_values("voltage")
+
+    voltages = measurements["voltage"].to_numpy(dtype=float)
+    rates = measurements["rate"].to_numpy(dtype=float)
+    rate_errors = measurements["rate_err"].to_numpy(dtype=float)
+    counts = measurements["counts"].to_numpy(dtype=float)
+    live_times = measurements["live_time"].to_numpy(dtype=float)
+
+    # ------------------------------------------------------------------
+    # Reconstruct fitted curve and deviance residuals
+    # ------------------------------------------------------------------
+
+    V_fit = np.linspace(
+        voltages.min(),
+        voltages.max(),
+        600
+    )
+
+    R_fit = asymmetric_trapezoid(V_fit, *fit_params)
+
+    expected_counts = np.clip(
+        asymmetric_trapezoid(voltages, *fit_params) * live_times,
+        1e-12,
+        None
+    )
+
+    deviance_terms = 2 * (
+        expected_counts - counts
+        + xlogy(counts, counts / expected_counts)
+    )
+
+    poisson_residuals = (
+        np.sign(counts - expected_counts)
+        * np.sqrt(np.maximum(deviance_terms, 0))
+    )
+
+    chi2 = np.sum(
+        (counts - expected_counts)**2 / expected_counts
+    )
+    deviance = np.sum(deviance_terms)
+    dof = len(counts) - len(fit_params)
+
+    # ==================================================================
+    # FIGURE: TRAPEZOID FIT AND RESIDUALS
+    # ==================================================================
+
+    fig_paper, (ax, ax_res) = plt.subplots(
+        2, 1,
+        figsize=(8.5, 5),
+        sharex=True,
+        gridspec_kw={
+            "height_ratios": [3, 0.75],
+            "hspace": 0.07
+        }
+    )
+
+    fig_paper.subplots_adjust(
+        left=0.12,
+        right=0.985,
+        top=0.975,
+        bottom=0.115,
+        hspace=0.07
+    )
+
+    label_size = 12
+    tick_size = 10
+    legend_size = 10
+    stats_size = 9.5
+
+    # ------------------------------------------------------------------
+    # Measured count rate
+    # ------------------------------------------------------------------
+
+    data_handle = ax.errorbar(
+        voltages,
+        rates,
+        yerr=rate_errors,
+        fmt="o",
+        color="#001969",
+        ecolor="#001969",
+        capsize=3,
+        markersize=4,
+        elinewidth=1.2,
+        label="Measured count rate",
+        zorder=3
+    )
+
+    # ------------------------------------------------------------------
+    # Trapezoid fit
+    # ------------------------------------------------------------------
+
+    fit_handle, = ax.plot(
+        V_fit,
+        R_fit,
+        color="#7e5bac",
+        linewidth=2,
+        label="Trapezoid fit",
+        zorder=2
+    )
+
+    # Optimal voltage
+    opt_handle = ax.axvline(
+        V_opt,
+        color="gray",
+        linestyle="--",
+        linewidth=1.5,
+        label=(
+            rf"$V_0 = {V_opt:.3f} "
+            rf"\pm {V_opt_err:.3f}_{{\mathrm{{stat}}}}$ kV"
+        )
+    )
+
+    # ------------------------------------------------------------------
+    # Axes and formatting
+    # ------------------------------------------------------------------
+
+    ymin = min(
+        np.min(rates - rate_errors),
+        np.min(R_fit)
+    )
+
+    ymax = max(
+        np.max(rates + rate_errors),
+        np.max(R_fit)
+    )
+
+    yrange = ymax - ymin
+
+    # Room at top for legend and statistics
+    ax.set_ylim(
+        ymin - 0.10 * yrange,
+        ymax + 0.43 * yrange
+    )
+
+    ax.set_ylabel(
+        "Count rate (counts/s)",
+        fontsize=label_size
+    )
+
+    ax.tick_params(labelsize=tick_size)
+    ax.grid(alpha=0.18)
+
+    # Legend: upper-right
+    ax.legend(
+        handles=[fit_handle, opt_handle, data_handle],
+        loc="upper right",
+        bbox_to_anchor=(0.99, 0.98),
+        fontsize=legend_size,
+        framealpha=0.95,
+        borderpad=0.4,
+        labelspacing=0.35
+    )
+
+    # ------------------------------------------------------------------
+    # Fit statistics: upper-left
+    # ------------------------------------------------------------------
+
+    stats_text = (
+        rf"$\chi^2/\mathrm{{dof}} = "
+        rf"{chi2:.2f}/{dof} = {chi2/dof:.2f}$"
+        "\n"
+        rf"$D/\mathrm{{dof}} = "
+        rf"{deviance:.2f}/{dof} = {deviance/dof:.2f}$"
+    )
+
+    ax.text(
+        0.02, 0.97,
+        stats_text,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=stats_size,
+        linespacing=1.4,
+        bbox={
+            "facecolor": "white",
+            "edgecolor": "0.7",
+            "alpha": 0.95,
+            "boxstyle": "round,pad=0.4"
+        }
+    )
+
+    # ------------------------------------------------------------------
+    # Poisson deviance residuals
+    # ------------------------------------------------------------------
+
+    ax_res.axhline(
+        0,
+        color="gray",
+        linestyle="--",
+        linewidth=1.2
+    )
+
+    ax_res.plot(
+        voltages,
+        poisson_residuals,
+        "o",
+        markersize=4,
+        color="#001969"
+    )
+
+    ax_res.set_xlabel(
+        "Velocity selector voltage (kV)",
+        fontsize=label_size
+    )
+
+    ax_res.set_ylabel(
+        "Deviance residual",
+        fontsize=label_size
+    )
+
+    ax_res.tick_params(labelsize=tick_size)
+    ax_res.grid(alpha=0.18)
+
+    voltage_span = np.ptp(voltages)
+    ax_res.set_xlim(
+        voltages.min() - 0.02 * voltage_span,
+        voltages.max() + 0.02 * voltage_span
+    )
+
+    # ------------------------------------------------------------------
+    # Save and preview
+    # ------------------------------------------------------------------
+
+    pdf_file = paper_dir / "trapezoid_fit_120G_paper.pdf"
+    png_file = paper_dir / "trapezoid_fit_120G_paper.png"
+
+    fig_paper.savefig(
+        pdf_file,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    fig_paper.savefig(
+        png_file,
+        dpi=300,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    print(f"Nominal magnetic field: {B_target:.1f} G")
+    print(f"Corrected magnetic field: {B_corrected:.2f} G")
+    print(f"Saved PDF: {pdf_file}")
+    print(f"Saved PNG: {png_file}")
+
+    plt.show()
 

@@ -395,6 +395,385 @@ def main():
                  mass_points_file, mass_figure_file):
         print(f"Saved: {path}")
 
+# ======================================================================
+# ======================================================================
+#
+#                       PAPER FIGURES
+#             ENERGY-VELOCITY AND ELECTRON MASS
+#
+# ======================================================================
+# ======================================================================
 
 if __name__ == "__main__":
-    main()
+    # Use the processed results saved by main()
+    # Respect --output-dir if one was specified
+    paper_parser = argparse.ArgumentParser(add_help=False)
+    paper_parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("data/processed/energy_velocity")
+    )
+    paper_args, _ = paper_parser.parse_known_args()
+
+    results_dir = paper_args.output_dir
+
+    paper_data = pd.read_csv(
+        results_dir / "energy_velocity_results.csv"
+    )
+
+    fit_table = pd.read_csv(
+        results_dir / "energy_model_comparison.csv"
+    )
+    paper_fits = fit_table.set_index("theory").to_dict("index")
+
+    paper_mass = pd.read_csv(
+        results_dir / "mass_by_field.csv"
+    )
+
+    paper_dir = Path(
+        "/home/rck67/jlab/relativistic_dynamics/figures/paper_figures"
+    )
+    paper_dir.mkdir(parents=True, exist_ok=True)
+
+    # Common formatting
+    label_size = 12
+    tick_size = 10
+    legend_size = 10
+    stats_size = 9.5
+    panel_size = 14
+
+
+    # ==================================================================
+    # FIGURE 1: ENERGY-VELOCITY RELATION
+    # ==================================================================
+
+    beta = paper_data["beta"].to_numpy(dtype=float)
+    beta_err = paper_data[
+        "beta_err_measurement_approx"
+    ].to_numpy(dtype=float)
+
+    gamma = paper_data["gamma"].to_numpy(dtype=float)
+    gamma_err = paper_data[
+        "gamma_err_measurement_approx"
+    ].to_numpy(dtype=float)
+
+    K = paper_data["K_deposited_keV"].to_numpy(dtype=float)
+    K_err = paper_data["K_combined_err_keV"].to_numpy(dtype=float)
+
+    beta_max = max(0.9, min(0.97, float(beta.max()) + 0.07))
+    beta_curve = np.linspace(0, beta_max, 600)
+    gamma_curve = 1 / np.sqrt(1 - beta_curve**2)
+
+    fig_energy, (ax_a, ax_b) = plt.subplots(
+        1, 2,
+        figsize=(12.5, 4.5),
+        sharey=True
+    )
+
+    fig_energy.subplots_adjust(
+        left=0.085,
+        right=0.992,
+        top=0.90,
+        bottom=0.155,
+        wspace=0.08
+    )
+
+    panels = [
+        (
+            ax_a,
+            beta,
+            beta_err,
+            beta_curve,
+            r"$\beta = v/c$",
+            "(a)"
+        ),
+        (
+            ax_b,
+            gamma - 1,
+            gamma_err,
+            gamma_curve - 1,
+            r"$\gamma - 1 = \frac{1}{\sqrt{1-\beta^2}} - 1$",
+            "(b)"
+        )
+    ]
+
+    for ax, x, x_err, curve_x, xlabel, panel_label in panels:
+
+        # Relativistic fit
+        ax.plot(
+            curve_x,
+            K_model(
+                beta_curve,
+                paper_fits["relativistic"]["mc2_keV"],
+                "relativistic"
+            ),
+            color="mediumpurple",
+            lw=2,
+            label="Relativistic fit"
+        )
+
+        # Nonrelativistic fit
+        ax.plot(
+            curve_x,
+            K_model(
+                beta_curve,
+                paper_fits["nonrelativistic"]["mc2_keV"],
+                "nonrelativistic"
+            ),
+            color="steelblue",
+            lw=2,
+            ls="--",
+            label="Nonrelativistic fit"
+        )
+
+        # Measurements
+        ax.errorbar(
+            x, K,
+            xerr=x_err,
+            yerr=K_err,
+            fmt="o",
+            ms=4,
+            color="midnightblue",
+            ecolor="midnightblue",
+            capsize=3,
+            elinewidth=1.2,
+            label="Measurements",
+            zorder=5
+        )
+
+        ax.set_xlabel(xlabel, fontsize=label_size)
+        ax.set_xlim(0, 1.0)
+        ax.set_ylim(bottom=0)
+        ax.grid(alpha=0.22)
+        ax.tick_params(labelsize=tick_size)
+
+        # Legend
+        ax.legend(
+            loc="upper left",
+            fontsize=legend_size,
+            framealpha=0.95
+        )
+
+        # Fit statistics
+        ax.text(
+            0.023, 0.73,
+            fit_statistics_text(paper_fits),
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=stats_size,
+            linespacing=1.5,
+            bbox={
+                "facecolor": "white",
+                "edgecolor": "0.7",
+                "alpha": 0.9,
+                "boxstyle": "round,pad=0.4"
+            },
+            zorder=8
+        )
+
+        # Panel labels outside top-left
+        ax.text(
+            0.0, 1.035,
+            panel_label,
+            transform=ax.transAxes,
+            ha="left",
+            va="bottom",
+            fontsize=panel_size,
+            fontweight="bold",
+            clip_on=False
+        )
+
+    # Shared y-axis
+    ax_a.set_ylabel(
+        r"Kinetic energy $K$ (keV)",
+        fontsize=label_size
+    )
+    ax_b.set_ylabel("")
+    ax_b.tick_params(axis="y", labelleft=False)
+
+    # Save energy-velocity figure
+    energy_pdf = paper_dir / "energy_velocity_paper.pdf"
+    energy_png = paper_dir / "energy_velocity_paper.png"
+
+    fig_energy.savefig(
+        energy_pdf,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+    fig_energy.savefig(
+        energy_png,
+        dpi=300,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    print(f"Saved: {energy_pdf}")
+    print(f"Saved: {energy_png}")
+
+
+    # ==================================================================
+    # FIGURE 2: ELECTRON MASS VS MAGNETIC FIELD
+    # ==================================================================
+
+    fig_mass, ax_mass = plt.subplots(figsize=(9.5, 5))
+
+    fig_mass.subplots_adjust(
+        left=0.10,
+        right=0.985,
+        top=0.965,
+        bottom=0.27
+    )
+
+    mass_scale = 1e-31
+    kg_per_keV = 1000.0 * electron_volt / c**2
+
+    B = paper_mass["B_corrected_G"].to_numpy(dtype=float)
+    B_err = paper_mass["B_err_G"].to_numpy(dtype=float)
+
+    mass_styles = [
+        (
+            "nonrelativistic",
+            "m_nonrel_kg",
+            "m_nonrel_err_pointwise_kg",
+            "steelblue",
+            "#cfe3ff",
+            "o",
+            "Nonrelativistic"
+        ),
+        (
+            "relativistic",
+            "m_rel_kg",
+            "m_rel_err_pointwise_kg",
+            "mediumpurple",
+            "#e6d5ff",
+            "s",
+            "Relativistic"
+        )
+    ]
+
+    # ------------------------------------------------------------------
+    # Fitted electron mass uncertainty bands
+    # ------------------------------------------------------------------
+
+    for theory, col, err_col, point_color, band_color, marker, label in mass_styles:
+
+        fitted = (
+            paper_fits[theory]["mc2_keV"]
+            * kg_per_keV / mass_scale
+        )
+
+        sigma_fit = (
+            paper_fits[theory]["mc2_err_stat_approx_keV"]
+            * kg_per_keV / mass_scale
+        )
+
+        ax_mass.axhspan(
+            fitted - sigma_fit,
+            fitted + sigma_fit,
+            color=band_color,
+            alpha=0.65,
+            zorder=0,
+            label=(
+                rf"{label} fit: "
+                rf"$({fitted:.3f}\pm{sigma_fit:.3f}_\mathrm{{stat}})"
+                r"\times10^{-31}$ kg"
+            )
+        )
+
+    # ------------------------------------------------------------------
+    # Accepted electron mass
+    # ------------------------------------------------------------------
+
+    ax_mass.axhline(
+        electron_mass / mass_scale,
+        color="0.25",
+        linestyle="--",
+        linewidth=1.5,
+        label=(
+            rf"Accepted $m_e$: "
+            rf"${electron_mass / mass_scale:.3f}"
+            r"\times10^{-31}$ kg"
+        ),
+        zorder=2
+    )
+
+    # ------------------------------------------------------------------
+    # Individual electron mass measurements
+    # ------------------------------------------------------------------
+
+    for theory, col, err_col, point_color, band_color, marker, label in mass_styles:
+
+        ax_mass.errorbar(
+            B,
+            paper_mass[col].to_numpy(dtype=float) / mass_scale,
+            xerr=B_err,
+            yerr=paper_mass[err_col].to_numpy(dtype=float) / mass_scale,
+            fmt=marker,
+            ms=5,
+            color=point_color,
+            ecolor=point_color,
+            capsize=3,
+            elinewidth=1.1,
+            label=f"{label} points",
+            zorder=4
+        )
+
+    # ------------------------------------------------------------------
+    # Formatting
+    # ------------------------------------------------------------------
+
+    ax_mass.set_xlabel(
+        r"Magnetic field $B$ (G)",
+        fontsize=label_size
+    )
+
+    ax_mass.set_ylabel(
+        r"Electron mass $m_e$ ($10^{-31}$ kg)",
+        fontsize=label_size
+    )
+
+    ax_mass.tick_params(labelsize=tick_size)
+    ax_mass.grid(alpha=0.22)
+
+    # Legend below the figure in two columns
+    ax_mass.legend(
+        loc="upper center",
+        bbox_to_anchor=(0.5, -0.15),
+        ncol=2,
+        fontsize=9.5,
+        framealpha=0.95,
+        columnspacing=1.2,
+        handletextpad=0.6,
+        borderaxespad=0.0
+    )
+
+    # ------------------------------------------------------------------
+    # Save electron mass figure
+    # ------------------------------------------------------------------
+
+    mass_pdf = paper_dir / "electron_mass_vs_B_paper.pdf"
+    mass_png = paper_dir / "electron_mass_vs_B_paper.png"
+
+    fig_mass.savefig(
+        mass_pdf,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    fig_mass.savefig(
+        mass_png,
+        dpi=300,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    print(f"Saved: {mass_pdf}")
+    print(f"Saved: {mass_png}")
+
+
+    # ==================================================================
+    # PREVIEW PAPER FIGURES
+    # ==================================================================
+
+    plt.show()

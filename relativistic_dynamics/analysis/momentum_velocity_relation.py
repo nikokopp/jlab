@@ -274,7 +274,7 @@ ax.axhspan(
     color=rel_band_color,
     alpha=0.6,
     label=(
-        fr'Relativistic e/m range: {em_rel / scale:.3f}' 
+        fr'Relativistic e/m range: {em_rel / scale:.3f}'
         fr'$\pm {em_rel_err / scale:.3f}_\mathrm{{stat}}$'
         r'$\times 10^{11}$ C/kg'
     )
@@ -337,7 +337,7 @@ ax.axhline(
 
 ax.set_xlabel(r'Magnetic field $B$ (G)')
 ax.set_ylabel(r'$e/m$ ($10^{11}$ C/kg)')
-ax.set_title(r'Calculated $e/m$ vs. magnetic field')
+# ax.set_title(r'Calculated $e/m$ vs. magnetic field')
 ax.grid(alpha=0.22)
 ax.legend(
     loc='upper center',
@@ -351,5 +351,359 @@ out_file = Path(
 out_file.parent.mkdir(parents=True, exist_ok=True)
 fig.savefig(out_file, dpi=220, bbox_inches='tight')
 print("Saved", out_file)
+
+plt.show()
+
+# ======================================================================
+# ======================================================================
+#
+#                    PAPER FIGURES
+#              MOMENTUM RELATION AND e/m
+#
+# ======================================================================
+# ======================================================================
+
+paper_dir = Path(
+    "/home/rck67/jlab/relativistic_dynamics/figures/paper_figures"
+)
+paper_dir.mkdir(parents=True, exist_ok=True)
+
+# Common formatting
+label_size = 12
+tick_size = 10
+legend_size = 10
+stats_size = 9.5
+panel_size = 14
+
+
+# ======================================================================
+# FIGURE 1: MOMENTUM-VELOCITY RELATION
+# ======================================================================
+
+fig_mom, (ax_a, ax_b) = plt.subplots(
+    1, 2,
+    figsize=(12.5, 4.5),
+    sharey=True
+)
+
+fig_mom.subplots_adjust(
+    left=0.085,
+    right=0.992,
+    top=0.90,
+    bottom=0.155,
+    wspace=0.08
+)
+
+# ----------------------------------------------------------------------
+# (a) Momentum vs beta
+# ----------------------------------------------------------------------
+
+ax_a.errorbar(
+    beta, p,
+    xerr=beta_err_V,
+    yerr=p_err_total,
+    fmt='o',
+    ms=4,
+    color=colors['data'],
+    ecolor=colors['error'],
+    capsize=3,
+    elinewidth=1.2,
+    label='Measurements'
+)
+
+ax_a.plot(
+    low_beta,
+    p_factor*a_rel*low_beta/np.sqrt(1-low_beta**2),
+    color=colors['rel'],
+    lw=2,
+    label='Relativistic fit'
+)
+
+ax_a.plot(
+    low_beta,
+    p_factor*a_nonrel*low_beta,
+    ls='--',
+    lw=2,
+    color=colors['nonrel'],
+    label='Nonrelativistic fit'
+)
+
+ax_a.set_xlabel(r'$\beta = E/B = v/c$', fontsize=label_size)
+ax_a.set_ylabel(r'Momentum $p$ (keV/$c$)', fontsize=label_size)
+
+
+# ----------------------------------------------------------------------
+# (b) Momentum vs gamma*beta
+# ----------------------------------------------------------------------
+
+ax_b.errorbar(
+    gamma_beta, p,
+    xerr=gamma_beta_err_V,
+    yerr=p_err_total,
+    fmt='o',
+    ms=4,
+    color=colors['data'],
+    ecolor=colors['error'],
+    capsize=3,
+    elinewidth=1.2,
+    label='Measurements'
+)
+
+ax_b.plot(
+    low_gammabeta,
+    p_factor*a_rel*low_gammabeta,
+    color=colors['rel'],
+    lw=2,
+    label='Relativistic fit'
+)
+
+ax_b.plot(
+    low_gammabeta,
+    p_factor*a_nonrel*low_gammabeta /
+    np.sqrt(1+low_gammabeta**2),
+    ls='--',
+    lw=2,
+    color=colors['nonrel'],
+    label='Nonrelativistic fit'
+)
+
+ax_b.set_xlabel(
+    r'$\gamma\beta = \beta/\sqrt{1-\beta^2}$',
+    fontsize=label_size
+)
+
+# Shared y-axis: no duplicate label or tick numbers
+ax_b.set_ylabel('')
+ax_b.tick_params(axis='y', labelleft=False)
+
+
+# ----------------------------------------------------------------------
+# Format both momentum plots
+# ----------------------------------------------------------------------
+
+stats_text = (
+    rf'Relativistic fit: $\chi^2/\mathrm{{dof}} = '
+    rf'{rel_fit[2]:.3f}/{rel_fit[3]} = '
+    rf'{rel_fit[2]/rel_fit[3]:.3f}$'
+    "\n"
+    rf'Nonrelativistic fit: $\chi^2/\mathrm{{dof}} = '
+    rf'{nonrel_fit[2]:.3f}/{nonrel_fit[3]} = '
+    rf'{nonrel_fit[2]/nonrel_fit[3]:.3f}$'
+)
+
+# Common y-limits for both plots
+mom_ymax = max(
+    np.max(p + p_err_total),
+    np.max(p_factor*a_rel*low_beta /
+           np.sqrt(1-low_beta**2)),
+    np.max(p_factor*a_rel*low_gammabeta)
+) * 1.05
+
+ax_a.set_ylim(0, mom_ymax)
+
+for ax, panel_label in [(ax_a, '(a)'), (ax_b, '(b)')]:
+    ax.set_xlim(left=0)
+    ax.grid(alpha=0.22)
+    ax.tick_params(labelsize=tick_size)
+
+    ax.legend(
+        loc='upper left',
+        fontsize=legend_size,
+        framealpha=0.95
+    )
+
+    # Fit statistics in bottom-right corner
+    ax.text(
+        0.98, 0.055,
+        stats_text,
+        ha='right',
+        va='bottom',
+        transform=ax.transAxes,
+        fontsize=stats_size,
+        linespacing=1.5,
+        bbox={
+            'facecolor': 'white',
+            'edgecolor': '0.7',
+            'alpha': 0.9,
+            'boxstyle': 'round,pad=0.4'
+        }
+    )
+
+    # Panel label outside top-left corner
+    ax.text(
+        0.0, 1.035,
+        panel_label,
+        transform=ax.transAxes,
+        ha='left',
+        va='bottom',
+        fontsize=panel_size,
+        fontweight='bold',
+        clip_on=False
+    )
+
+
+# Save momentum figure
+momentum_pdf = paper_dir / "momentum_velocity_paper.pdf"
+momentum_png = paper_dir / "momentum_velocity_paper.png"
+
+fig_mom.savefig(momentum_pdf, bbox_inches='tight', pad_inches=0.02)
+fig_mom.savefig(momentum_png, dpi=300, bbox_inches='tight', pad_inches=0.02)
+
+print(f"Saved: {momentum_pdf}")
+print(f"Saved: {momentum_png}")
+
+
+# ======================================================================
+# FIGURE 2: e/m VS MAGNETIC FIELD
+# ======================================================================
+
+fig_em, ax_em = plt.subplots(figsize=(9.5, 5.0))
+
+# Reserve space beneath the plot for the legend
+fig_em.subplots_adjust(
+    left=0.10,
+    right=0.985,
+    top=0.965,
+    bottom=0.24
+)
+
+# Colors
+nonrel_point_color = "steelblue"
+rel_point_color = "mediumpurple"
+nonrel_band_color = "#cfe3ff"
+rel_band_color = "#e6d5ff"
+
+
+# ----------------------------------------------------------------------
+# Fit uncertainty bands
+# ----------------------------------------------------------------------
+
+# Nonrelativistic band
+ax_em.axhspan(
+    (em_nonrel - em_nonrel_err) / scale,
+    (em_nonrel + em_nonrel_err) / scale,
+    color=nonrel_band_color,
+    alpha=0.65,
+    zorder=0,
+    label=(
+        fr'Nonrelativistic $e/m$: {em_nonrel / scale:.3f}'
+        fr'$\pm {em_nonrel_err / scale:.3f}_\mathrm{{stat}}$'
+        r'$\times 10^{11}$ C/kg'
+    )
+)
+
+# Relativistic band
+ax_em.axhspan(
+    (em_rel - em_rel_err) / scale,
+    (em_rel + em_rel_err) / scale,
+    color=rel_band_color,
+    alpha=0.65,
+    zorder=0,
+    label=(
+        fr'Relativistic $e/m$: {em_rel / scale:.3f}'
+        fr'$\pm {em_rel_err / scale:.3f}_\mathrm{{stat}}$'
+        r'$\times 10^{11}$ C/kg'
+    )
+)
+
+
+# ----------------------------------------------------------------------
+# Experimental e/m points
+# ----------------------------------------------------------------------
+
+# Relativistic
+ax_em.errorbar(
+    B,
+    em_rel_points / scale,
+    xerr=B_err,
+    yerr=em_rel_point_err / scale,
+    fmt='s',
+    ms=5,
+    color=rel_point_color,
+    ecolor=rel_point_color,
+    capsize=3,
+    elinewidth=1.1,
+    label='Relativistic points'
+)
+
+# Nonrelativistic
+ax_em.errorbar(
+    B,
+    em_nonrel_points / scale,
+    xerr=B_err,
+    yerr=em_nonrel_point_err / scale,
+    fmt='o',
+    ms=5,
+    color=nonrel_point_color,
+    ecolor=nonrel_point_color,
+    capsize=3,
+    elinewidth=1.1,
+    label='Nonrelativistic points'
+)
+
+
+# ----------------------------------------------------------------------
+# Accepted e/m reference
+# ----------------------------------------------------------------------
+
+ax_em.axhline(
+    em_reference / scale,
+    color='0.25',
+    linestyle='--',
+    linewidth=1.5,
+    label=(
+        fr'Accepted $e/m$: {em_reference / scale:.3f}'
+        r'$\times 10^{11}$ C/kg'
+    )
+)
+
+
+# ----------------------------------------------------------------------
+# Formatting and legend
+# ----------------------------------------------------------------------
+
+ax_em.set_xlabel(
+    r'Magnetic field $B$ (G)',
+    fontsize=label_size
+)
+
+ax_em.set_ylabel(
+    r'$e/m$ ($10^{11}$ C/kg)',
+    fontsize=label_size
+)
+
+ax_em.tick_params(labelsize=tick_size)
+ax_em.grid(alpha=0.22)
+
+# Legend underneath, organized in two columns
+ax_em.legend(
+    loc='upper center',
+    bbox_to_anchor=(0.5, -0.11),
+    ncol=2,
+    fontsize=legend_size,
+    framealpha=0.95,
+    columnspacing=1.2,
+    handletextpad=0.6,
+    borderaxespad=0.0
+)
+
+# ----------------------------------------------------------------------
+# Save e/m figure
+# ----------------------------------------------------------------------
+
+em_pdf = paper_dir / "em_vs_B_paper.pdf"
+em_png = paper_dir / "em_vs_B_paper.png"
+
+fig_em.savefig(em_pdf, bbox_inches='tight', pad_inches=0.02)
+fig_em.savefig(em_png, dpi=300, bbox_inches='tight', pad_inches=0.02)
+
+
+print(f"Saved: {em_pdf}")
+print(f"Saved: {em_png}")
+
+
+# ======================================================================
+# PREVIEW BOTH FIGURES
+# ======================================================================
 
 plt.show()

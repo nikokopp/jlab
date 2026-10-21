@@ -1,0 +1,192 @@
+{
+  "reference_spectrum": "data/raw/calibration/2026-10-09/20261009_calibration.Spe",
+  "live_time_s": 62845.0,
+  "slope_guess": 0.56,
+  "features": [
+    {
+      "name": "81_keV_peak",
+      "display_name": "81 keV doublet",
+      "plot_label": "81 keV doublet",
+      "kind": "doublet",
+      "energy_keV": 80.997,
+      "beta_scale": null,
+      "mu_ch": 144.61248043117286,
+      "mu_stat_ch": 0.028769242902989323,
+      "width_ch": 4.030048758064764,
+      "deviance": 19.235462259461567,
+      "pearson_chi2": 19.21649565478078,
+      "reduced_pearson_chi2": 0.8354998110774252,
+      "dof": 23,
+      "reduced_deviance": 0.8363244460635464,
+      "bound_hit": false,
+      "mu_window_sys_ch": 0.10305193328582618,
+      "mu_extra_sys_ch": 0.0,
+      "mu_sys_ch": 0.10305193328582618,
+      "mu_total_ch": 0.10699238426709431,
+      "fit_windows_ch": [
+        [
+          132,
+          158
+        ],
+        [
+          128,
+          162
+        ],
+        [
+          126,
+          164
+        ]
+      ],
+      "window_shifts_ch": [
+        0.006726289003438524,
+        -0.07465057246335505,
+        -0.10305193328582618
+      ]
+    },
+    {
+      "name": "53_keV_peak",
+      "display_name": "53 keV peak",
+      "plot_label": "53 keV peak",
+      "kind": "gaussian",
+      "energy_keV": 53.1625,
+      "beta_scale": null,
+      "mu_ch": 94.51854084636263,
+      "mu_stat_ch": 0.17208120563236468,
+      "width_ch": 3.3101969945153953,
+      "deviance": 13.812004913235366,
+      "pearson_chi2": 13.810328824310512,
+      "reduced_pearson_chi2": 0.7268594118058164,
+      "dof": 19,
+      "reduced_deviance": 0.7269476270123877,
+      "bound_hit": false,
+      "mu_window_sys_ch": 0.06889259311267892,
+      "mu_extra_sys_ch": 0.0,
+      "mu_sys_ch": 0.06889259311267892,
+      "mu_total_ch": 0.1853594635233856,
+      "fit_windows_ch": [
+        [
+          87,
+          106
+        ],
+        [
+          83,
+          110
+        ],
+        [
+          81,
+          112
+        ]
+      ],
+      "window_shifts_ch": [
+        -0.008639495484601412,
+        -0.06889259311267892,
+        0.0415190437830546
+      ]
+    },
+    {
+      "name": "31_keV_peak",
+      "display_name": "31 keV Cs K X-ray multiplet",
+      "plot_label": "Cs K multiplet",
+      "kind": "cs_k_complex",
+      "energy_keV": 30.97313,
+      "beta_scale": 1.0194425047717546,
+      "mu_ch": 55.34757617235359,
+      "mu_stat_ch": 0.013911070758116493,
+      "width_ch": 4.281355857527063,
+      "deviance": 47.04671336206631,
+      "pearson_chi2": 47.031828581794834,
+      "reduced_pearson_chi2": 2.1378103900815835,
+      "dof": 22,
+      "reduced_deviance": 2.1384869710030143,
+      "bound_hit": false,
+      "mu_window_sys_ch": 0.13458960008661336,
+      "mu_extra_sys_ch": 0.0,
+      "mu_sys_ch": 0.13458960008661336,
+      "mu_total_ch": 0.1353066086379813,
+      "fit_windows_ch": [
+        [
+          42,
+          70
+        ],
+        [
+          45,
+          70
+        ],
+        [
+          45,
+          74
+        ]
+      ],
+      "window_shifts_ch": [
+        0.0,
+        0.05428237584737161,
+        -0.13458960008661336
+      ]
+    },
+    {
+      "name": "356_keV_edge",
+      "display_name": "207 keV Compton edge (from 356 keV photon line)",
+      "plot_label": "207 keV Compton edge",
+      "kind": "edge",
+      "energy_keV": 207.265,
+      "beta_scale": null,
+      "mu_ch": 369.34938652422755,
+      "mu_stat_ch": 0.42336381875211987,
+      "width_ch": 7.204170209529506,
+      "deviance": 33.985325955790756,
+      "pearson_chi2": 34.063039802481605,
+      "reduced_pearson_chi2": 0.7741599955109456,
+      "dof": 44,
+      "reduced_deviance": 0.7723937717225172,
+      "bound_hit": false,
+      "mu_window_sys_ch": 0.3358877305182659,
+      "mu_extra_sys_ch": 0.0,
+      "mu_sys_ch": 0.3358877305182659,
+      "mu_total_ch": 0.5404234363358875,
+      "fit_windows_ch": [
+        [
+          353,
+          392
+        ],
+        [
+          345,
+          400
+        ],
+        [
+          341,
+          404
+        ]
+      ],
+      "window_shifts_ch": [
+        0.18181774010957952,
+        0.15058272889984892,
+        0.3358877305182659
+      ]
+    }
+  ],
+  "linear_calibration": {
+    "slope_keV_per_channel": 0.5604845529600944,
+    "offset_keV": -0.04829232112246933,
+    "slope_err_keV_per_channel": 0.00019441665319318763,
+    "offset_err_keV": 0.01576094851189105,
+    "covariance_keV": [
+      [
+        3.779783503884019e-08,
+        -2.745599310837945e-06
+      ],
+      [
+        -2.745599310837946e-06,
+        0.00024840749799448074
+      ]
+    ],
+    "chi2": 7.7333746773096905,
+    "dof": 2,
+    "n_features": 4,
+    "residuals_keV": [
+      -0.007769125793842591,
+      0.23461020840849045,
+      -3.916726389974201e-05,
+      0.2986665290056578
+    ]
+  }
+}

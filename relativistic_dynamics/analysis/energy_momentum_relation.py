@@ -195,5 +195,190 @@ def main():
     print(f"\nSaved plot: {figure_file}\nSaved data and model comparison: {OUTPUT_DIR}")
     plt.show()
 
+# ======================================================================
+# ======================================================================
+#
+#                       PAPER FIGURE
+#                  ENERGY-MOMENTUM RELATION
+#
+# ======================================================================
+# ======================================================================
+
 if __name__ == "__main__":
-    main()
+
+    paper_dir = ROOT / "figures/paper_figures"
+    paper_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load previously calculated data and fit results
+    paper_data = pd.read_csv(
+        OUTPUT_DIR / "energy_momentum_results.csv"
+    )
+
+    fit_table = pd.read_csv(
+        OUTPUT_DIR / "energy_momentum_model_comparison.csv"
+    )
+    paper_fits = fit_table.set_index("model").to_dict("index")
+
+    fit_rel = paper_fits["rel"]
+    fit_nr = paper_fits["nonrel"]
+
+    # Extract measurements
+    p = paper_data["p_keV_c"].to_numpy(dtype=float)
+    p_err = paper_data["p_err_total_keV_c"].to_numpy(dtype=float)
+    K = paper_data["K_deposited_keV"].to_numpy(dtype=float)
+    K_err = paper_data["K_combined_err_keV"].to_numpy(dtype=float)
+
+    # Momentum range for fitted curves
+    p_grid = np.linspace(
+        0,
+        max(p + p_err) * 1.07,
+        600
+    )
+
+    # ==================================================================
+    # FIGURE: KINETIC ENERGY VS MOMENTUM
+    # ==================================================================
+
+    fig_paper, ax = plt.subplots(figsize=(8.5, 4.5))
+
+    # Minimize surrounding whitespace
+    fig_paper.subplots_adjust(
+        left=0.11,
+        right=0.985,
+        top=0.975,
+        bottom=0.135
+    )
+
+    label_size = 12
+    tick_size = 10
+    legend_size = 10
+    stats_size = 9.5
+
+    # ------------------------------------------------------------------
+    # Experimental measurements
+    # ------------------------------------------------------------------
+
+    ax.errorbar(
+        p, K,
+        xerr=p_err,
+        yerr=K_err,
+        fmt="o",
+        ms=4,
+        color=colors["data"],
+        ecolor=colors["error"],
+        capsize=3,
+        elinewidth=1.2,
+        label="Measurements",
+        zorder=5
+    )
+
+    # ------------------------------------------------------------------
+    # Relativistic fit
+    # ------------------------------------------------------------------
+
+    ax.plot(
+        p_grid,
+        k_model(p_grid, fit_rel["mc2_keV"], "rel"),
+        color=colors["rel"],
+        lw=2,
+        label="Relativistic fit"
+    )
+
+    # ------------------------------------------------------------------
+    # Nonrelativistic fit
+    # ------------------------------------------------------------------
+
+    ax.plot(
+        p_grid,
+        k_model(p_grid, fit_nr["mc2_keV"], "nonrel"),
+        color=colors["nonrel"],
+        lw=2,
+        ls="--",
+        label="Nonrelativistic fit"
+    )
+
+    # ------------------------------------------------------------------
+    # Formatting
+    # ------------------------------------------------------------------
+
+    ax.set_xlabel(
+        r"Momentum $p$ (keV/$c$)",
+        fontsize=label_size
+    )
+
+    ax.set_ylabel(
+        r"Kinetic energy $K$ (keV)",
+        fontsize=label_size
+    )
+
+    ax.set_xlim(left=0)
+    ax.set_ylim(bottom=0)
+
+    ax.tick_params(labelsize=tick_size)
+    ax.grid(alpha=0.22)
+
+    # ------------------------------------------------------------------
+    # Legend: original upper-left position
+    # ------------------------------------------------------------------
+
+    ax.legend(
+        loc="upper left",
+        fontsize=legend_size,
+        framealpha=0.95
+    )
+
+    # ------------------------------------------------------------------
+    # Fit statistics: positioned below legend
+    # ------------------------------------------------------------------
+
+    stats_text = (
+        rf'Relativistic fit: $\chi^2/\mathrm{{dof}} = '
+        rf'{fit_rel["chi2"]:.3f}/{fit_rel["dof"]} = '
+        rf'{fit_rel["chi2_dof"]:.3f}$'
+        "\n"
+        rf'Nonrelativistic fit: $\chi^2/\mathrm{{dof}} = '
+        rf'{fit_nr["chi2"]:.3f}/{fit_nr["dof"]} = '
+        rf'{fit_nr["chi2_dof"]:.3f}$'
+    )
+
+    ax.text(
+        0.016, 0.76,
+        stats_text,
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=stats_size,
+        linespacing=1.5,
+        bbox={
+            "facecolor": "white",
+            "edgecolor": "0.7",
+            "alpha": 0.9,
+            "boxstyle": "round,pad=0.4"
+        },
+        zorder=8
+    )
+
+    # ------------------------------------------------------------------
+    # Save figure
+    # ------------------------------------------------------------------
+
+    pdf_file = paper_dir / "energy_momentum_paper.pdf"
+    png_file = paper_dir / "energy_momentum_paper.png"
+
+    fig_paper.savefig(
+        pdf_file,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    fig_paper.savefig(
+        png_file,
+        dpi=300,
+        bbox_inches="tight",
+        pad_inches=0.02
+    )
+
+    print(f"Saved PDF: {pdf_file}")
+    print(f"Saved PNG: {png_file}")
+
+    plt.show()
