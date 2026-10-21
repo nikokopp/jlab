@@ -1,0 +1,5 @@
+stow
+wait 10
+Sun
+wait 30
+record
