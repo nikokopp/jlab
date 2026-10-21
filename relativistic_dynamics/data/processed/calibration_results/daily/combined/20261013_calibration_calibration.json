@@ -1,0 +1,82 @@
+{
+  "file": "data/raw/calibration/2026-10-13/20261013_calibration.Spe",
+  "date": "2026-10-13",
+  "live_time_s": 1057.0,
+  "linear_calibration": {
+    "slope_keV_per_channel": 0.5599084116024264,
+    "offset_keV": 0.08291886993240247,
+    "slope_err_keV_per_channel": 0.004043653489948766,
+    "offset_err_keV": 0.3021585579868709,
+    "covariance_keV": [
+      [
+        1.635113354677483e-05,
+        -0.0011100792279812196
+      ],
+      [
+        -0.0011100792279812193,
+        0.09129979416470523
+      ]
+    ],
+    "chi2": 8.51768186531915e-28,
+    "dof": 0,
+    "n_features": 2,
+    "residuals_keV": [
+      3.552713678800501e-15,
+      0.0
+    ]
+  },
+  "features": [
+    {
+      "name": "31_keV_peak",
+      "display_name": "31 keV Cs K X-ray multiplet",
+      "plot_label": "Cs K multiplet",
+      "kind": "cs_k_complex",
+      "energy_keV": 30.97313,
+      "beta_scale": 1.0194425047717546,
+      "mu_ch": 55.170114415072895,
+      "mu_stat_ch": 0.11286453294694508,
+      "width_ch": 6.230546337073543,
+      "deviance": 39.96600645803768,
+      "pearson_chi2": 39.98521970625376,
+      "reduced_pearson_chi2": 1.4809340631945835,
+      "dof": 27,
+      "reduced_deviance": 1.480222461408803,
+      "bound_hit": false,
+      "mu_window_sys_ch": 0.16858386968244332,
+      "mu_reference_window_sys_ch": 0.13458960008661336,
+      "window_shifts_ch": [
+        0.058629868135383845,
+        0.03621357538109038,
+        -0.16858386968244332
+      ],
+      "mu_total_ch": 0.24346105307813323,
+      "use_in_calibration": true
+    },
+    {
+      "name": "81_keV_peak",
+      "display_name": "81 keV doublet",
+      "plot_label": "81 keV doublet",
+      "kind": "doublet",
+      "energy_keV": 80.997,
+      "beta_scale": null,
+      "mu_ch": 144.5130658039161,
+      "mu_stat_ch": 0.3577341411077073,
+      "width_ch": 5.958178671325958,
+      "deviance": 24.52801877629481,
+      "pearson_chi2": 24.313193432682073,
+      "reduced_pearson_chi2": 0.784296562344583,
+      "dof": 31,
+      "reduced_deviance": 0.7912264121385423,
+      "bound_hit": false,
+      "mu_window_sys_ch": 0.4673972591888855,
+      "mu_reference_window_sys_ch": 0.10305193328582618,
+      "window_shifts_ch": [
+        0.17847624185512245,
+        0.4673972591888855,
+        -0.21986632047196508
+      ],
+      "mu_total_ch": 0.5975396343049536,
+      "use_in_calibration": true
+    }
+  ]
+}

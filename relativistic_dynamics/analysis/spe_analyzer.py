@@ -44,7 +44,7 @@ def parse_run_name(filename):
             pass
 
     pattern = (
-        r"B(?P<B>\d+)G_"
+        r"B(?P<B>\d+(?:[p.]\d+)?)G_"
         r"Vsel(?P<v_integer>\d+)p(?P<v_decimal>\d+)kV_"
         r"r(?P<run>\d+)"
     )
@@ -52,7 +52,7 @@ def parse_run_name(filename):
 
     if match:
         return {
-            'B_G': float(match.group('B')),
+            'B_G': float((match.group('B')).replace('p', '.')),
             'Vsel_kV': float(f"{match.group('v_integer')}.{match.group('v_decimal')}"),
             'run': int(match.group('run')),
             'date': date,
