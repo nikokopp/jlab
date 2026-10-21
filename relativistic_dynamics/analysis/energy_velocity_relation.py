@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.optimize import least_squares
+from scipy.constants import c, electron_mass, electron_volt
 
 
 COLUMNS = [
@@ -33,7 +34,9 @@ def load_data(results_dir, input_csv):
     if missing:
         raise ValueError(f"Missing required columns: {missing}")
 
-    data = data[COLUMNS].copy().sort_values("B_G").reset_index(drop=True)
+    # Keep an optional field uncertainty if it exists in the energy CSV.
+    optional_columns = [col for col in ("B_err_G",) if col in data.columns]
+    data = data[COLUMNS + optional_columns].copy().sort_values("B_G").reset_index(drop=True)
     if data["B_G"].duplicated().any():
         raise ValueError("Duplicate B_G values: check which field/day results were loaded")
     if len(data) != 7:
@@ -138,12 +141,12 @@ def plot_results(data, fits, output_png):
     beta_curve = np.linspace(0, beta_max, 600)
     gamma_curve = 1 / np.sqrt(1 - beta_curve**2)
 
-    fig, axes = plt.subplots(1, 2, figsize=(13.5, 6.0), layout="constrained")
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6.0), layout="constrained")
     panels = (
         (axes[0], beta, beta_err, beta_curve,
          r"$\beta = v/c$", r"Kinetic energy vs. $\beta$"),
         (axes[1], gamma - 1, gamma_err, gamma_curve - 1,
-         r"$\gamma - 1 = \sqrt{1-\beta^2} - 1$", r"Kinetic energy vs. $\gamma - 1$"),
+         r"$\gamma - 1 = \frac{1}{\sqrt{1-\beta^2}} - 1$", r"Kinetic energy vs. $\gamma - 1$"),
     )
 
     for ax, x, x_err, curve_x, xlabel, title in panels:
@@ -164,7 +167,7 @@ def plot_results(data, fits, output_png):
             color="midnightblue", label="Measurements", zorder=5,
         )
         ax.set(title=title, xlabel=xlabel, ylabel=r"Kinetic energy $K$ (keV)")
-        ax.set_xlim(left=0)
+        ax.set_xlim(left=0, right=1.0)
         ax.set_ylim(bottom=0)
         ax.grid(alpha=0.2)
 
@@ -184,6 +187,106 @@ def plot_results(data, fits, output_png):
     plt.show()
 
 
+
+def calculate_mass_points(data):
+    """Infer each electron's rest mass at each B, with pointwise uncertainties.
+
+    Fits use K in keV; this function converts (mc^2) from keV to kilograms.
+    Shared plate-gap, calibration, and detector-response systematics are
+    not represented by these per-point uncertainties.
+    """
+    K = data["K_deposited_keV"].to_numpy(dtype=float)
+    K_err = data["K_combined_err_keV"].to_numpy(dtype=float)
+    beta = data["beta"].to_numpy(dtype=float)
+    beta_err = data["beta_err_measurement_approx"].to_numpy(dtype=float)
+    gamma = data["gamma"].to_numpy(dtype=float)
+    gamma_err = data["gamma_err_measurement_approx"].to_numpy(dtype=float)
+
+    if np.any(K <= 0):
+        raise ValueError("Positive kinetic energies are required to infer mass")
+
+    # Each expression first yields the rest energy mc^2 in keV.
+    mc2_rel_keV = K / (gamma - 1.0)
+    mc2_nr_keV = 2.0 * K / beta**2
+
+    # 1 keV of rest energy divided by c^2, in kg.
+    kg_per_keV = 1000.0 * electron_volt / c**2
+    m_rel = mc2_rel_keV * kg_per_keV
+    m_nr = mc2_nr_keV * kg_per_keV
+
+    # First-order propagation of independent pointwise K and beta/gamma errors.
+    # Gamma errors are derived from beta errors and must NOT be included
+    # as an additional independent term alongside beta errors.
+    m_rel_err = m_rel * np.hypot(K_err / K, gamma_err / (gamma - 1.0))
+    m_nr_err = m_nr * np.hypot(K_err / K, 2.0 * beta_err / beta)
+
+    # Preserve the nominal field for tracking, but plot the corrected field.
+    result = data[["B_G", "B_corrected_G", "B_err_G"]].copy()
+    result["m_rel_kg"] = m_rel
+    result["m_rel_err_pointwise_kg"] = m_rel_err
+    result["m_nonrel_kg"] = m_nr
+    result["m_nonrel_err_pointwise_kg"] = m_nr_err
+    return result
+
+
+def plot_mass_vs_field(mass_points, fits, output_png):
+    """Analog of the e/m vs B figure: per-B estimates and fitted 1-sigma bands."""
+    # Plot mass in units of 10^-31 kg to keep the tick labels readable.
+    scale = 1e-31
+    kg_per_keV = 1000.0 * electron_volt / c**2
+    B = mass_points["B_corrected_G"].to_numpy(dtype=float)
+    B_err = mass_points["B_err_G"].to_numpy(dtype=float)
+
+    fig, ax = plt.subplots(figsize=(8, 5), layout="constrained")
+    styles = [
+        ("nonrelativistic", "m_nonrel_kg", "m_nonrel_err_pointwise_kg",
+         "steelblue", "#cfe3ff", "o", "Nonrelativistic"),
+        ("relativistic", "m_rel_kg", "m_rel_err_pointwise_kg",
+         "mediumpurple", "#e6d5ff", "s", "Relativistic"),
+    ]
+
+    # Render horizontal fitted-mass uncertainty bands first.
+    for theory, col, err_col, point_color, band_color, marker, label in styles:
+        fitted = fits[theory]["mc2_keV"] * kg_per_keV / scale
+        sigma_fit = fits[theory]["mc2_err_stat_approx_keV"] * kg_per_keV / scale
+        ax.axhspan(
+            fitted - sigma_fit, fitted + sigma_fit,
+            color=band_color, alpha=0.7, zorder=1,
+            label=(rf"{label} fit: "
+                   rf"$({fitted:.3f}\pm{sigma_fit:.3f}_\mathrm{{stat}})\times10^{{-31}}$ kg")
+        )
+
+    # Accepted electron rest mass.
+    ax.axhline(
+        electron_mass / scale, color="0.25", ls="--", lw=1.5,
+        label=rf"Accepted $m_e$: ${electron_mass / scale:.3f}\times10^{{-31}}$ kg",
+        zorder=2,
+    )
+
+    # Individual estimates at each B, with pointwise propagated y errors.
+    for theory, col, err_col, point_color, band_color, marker, label in styles:
+        ax.errorbar(
+            B, mass_points[col].to_numpy(dtype=float) / scale,
+            xerr=B_err,
+            yerr=mass_points[err_col].to_numpy(dtype=float) / scale,
+            fmt=marker, ms=5, capsize=3, elinewidth=1.1,
+            color=point_color, ecolor=point_color,
+            label=f"{label} points", zorder=4,
+        )
+
+    ax.set_xlabel(r"Magnetic field $B$ (G)")
+    ax.set_ylabel(r"Electron mass $m_e$ ($10^{-31}$ kg)")
+    ax.set_title("Calculated electron mass vs. magnetic field")
+    ax.grid(alpha=0.22)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.16),
+              ncol=2, framealpha=0.95, fontsize=9)
+
+    output_png = Path(output_png)
+    output_png.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_png, dpi=220, bbox_inches="tight")
+    plt.show()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--results-dir", type=Path,
@@ -193,7 +296,59 @@ def main():
                         default=Path("data/processed/energy_velocity"))
     args = parser.parse_args()
 
+    # Load the energy-summary measurements as before.
     data = load_data(args.results_dir, args.input_csv)
+
+    # Load nominal field, corrected field, and field uncertainty from the
+    # SAME processed trapezoid-fit file used by the momentum analysis.
+    sweep_file = Path(
+        "/home/rck67/jlab/relativistic_dynamics/data/processed/"
+        "trapezoid_fits/velocity_sweep_results.csv"
+    )
+    sweep = pd.read_csv(
+        sweep_file,
+        usecols=["B_G", "B_corrected_G", "Berr_corrected_G", "V_opt_kV"],
+    ).rename(columns={"Berr_corrected_G": "B_err_G"})
+
+    # These new fields are authoritative for the x-axis. If the input energy
+    # CSV happens to contain older copies, replace those instead of creating
+    # duplicate _x / _y column names.
+    data = data.drop(columns=["B_corrected_G", "B_err_G"], errors="ignore")
+    data = data.merge(
+        sweep,
+        on="B_G",                  # Both files use nominal B_G as the key.
+        how="left",
+        validate="one_to_one",    # Catch duplicate nominal field settings.
+        indicator=True,
+    )
+    unmatched = data.loc[data["_merge"] != "both", "B_G"]
+    if not unmatched.empty:
+        raise ValueError(
+            "No velocity-sweep entry for nominal B_G values: "
+            f"{unmatched.to_list()}"
+        )
+    data = data.drop(columns="_merge")
+    if (data["B_err_G"] <= 0).any():
+        raise ValueError("B_err_G must be positive")
+
+    print("\nMatched magnetic-field measurements:")
+    print(data[["B_G", "B_corrected_G", "B_err_G"]].to_string(index=False))
+
+    # A useful consistency check: the existing energy-data beta must have
+    # been calculated using the corrected field and optimized selector voltage.
+    beta_from_sweep = (
+        data["V_opt_kV"].to_numpy(dtype=float) * 1000.0
+        / 299.792458 / 0.180
+        / data["B_corrected_G"].to_numpy(dtype=float)
+    )
+    if not np.allclose(data["beta"], beta_from_sweep, rtol=0.01, atol=0):
+        warnings.warn(
+            "Energy-data beta differs by >1% from E/B calculated using "
+            "the velocity sweep's optimized voltage and corrected B. "
+            "Check upstream beta/gamma processing before interpreting mass."
+        )
+
+    # Save combined data with the corrected B columns.
     args.output_dir.mkdir(parents=True, exist_ok=True)
     combined_file = args.output_dir / "energy_velocity_results.csv"
     data.to_csv(combined_file, index=False)
@@ -204,8 +359,8 @@ def main():
     K_err = data["K_combined_err_keV"].to_numpy(dtype=float)
 
     print("\nExperimental measurements:")
-    print(data[["B_G", "K_deposited_keV", "K_combined_err_keV",
-                "beta", "gamma"]].to_string(index=False))
+    print(data[["B_G", "B_corrected_G", "K_deposited_keV",
+                "K_combined_err_keV", "beta", "gamma"]].to_string(index=False))
 
     fits = {
         theory: fit_model(beta, beta_err, K, K_err, theory)
@@ -215,20 +370,30 @@ def main():
     comparison_file = args.output_dir / "energy_model_comparison.csv"
     comparison.to_csv(comparison_file, index=False)
 
-    print("\nFitted models (the same fits shown in both coordinate systems):")
-    print(comparison.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
+    print("\nFitted models:")
+    print(comparison.to_string(index=False,
+                               float_format=lambda value: f"{value:.3f}"))
 
-    figure_file = "/home/rck67/jlab/relativistic_dynamics/figures/relativistic_relations/energy_velocity_comparison.png"
+    figure_file = Path(
+        "/home/rck67/jlab/relativistic_dynamics/figures/"
+        "relativistic_relations/energy_velocity_comparison.png"
+    )
+    figure_file.parent.mkdir(parents=True, exist_ok=True)
     plot_results(data, fits, figure_file)
 
-    print("\nχ², dof and χ²/dof are shown on BOTH plots. These are the same")
-    print("measurements transformed from β to γ−1, not independent fits.")
-    print("Pointwise β and K errors are included; common plate-gap uncertainty,")
-    print("correlated calibration, spectral-model and detector-response")
+    mass_points = calculate_mass_points(data)
+    mass_points_file = args.output_dir / "mass_by_field.csv"
+    mass_points.to_csv(mass_points_file, index=False)
+
+    mass_figure_file = figure_file.with_name("electron_mass_vs_B.png")
+    plot_mass_vs_field(mass_points, fits, mass_figure_file)
+
+    print("\nPointwise beta and K errors are included in the fits; common")
+    print("plate-gap, correlated calibration, and detector-response")
     print("systematics are NOT included.")
-    print(f"\nSaved: {combined_file}")
-    print(f"Saved: {comparison_file}")
-    print(f"Saved: {figure_file}")
+    for path in (combined_file, comparison_file, figure_file,
+                 mass_points_file, mass_figure_file):
+        print(f"Saved: {path}")
 
 
 if __name__ == "__main__":

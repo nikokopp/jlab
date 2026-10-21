@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
-from scipy.constants import c
+from scipy.constants import c, elementary_charge, electron_mass
 
 data_file = Path("/home/rck67/jlab/relativistic_dynamics/data/processed/trapezoid_fits/velocity_sweep_results.csv")
 data = pd.read_csv(data_file)
@@ -28,7 +28,7 @@ beta_err_V = E_err / B
 gamma_beta_err_V = gamma**3 * beta_err_V
 
 # Convert B (gauss) to momentum (keV/c) for plotting only.
-# In SI: p = |e| B rho; B[T] = 1e-4 * B[G].
+# In SI: p = e B rho; B[T] = 1e-4 * B[G].
 # The electron charge cancels when converting kg m/s to keV/c.
 p_factor = c * rho_m * 1e-7  # (keV/c) / G
 p = p_factor * B
@@ -135,7 +135,7 @@ colors = {
     "nonrel": "steelblue"
 }
 
-fig, axs = plt.subplots(1, 2, figsize=(13.6, 5.2), sharey=True)
+fig, axs = plt.subplots(1, 2, figsize=(12, 6), layout="constrained")
 
 # show axes to zero to show agreement at low velocities
 low_beta = np.linspace(0.0, min(0.90, max(beta)+0.055), 500)
@@ -192,6 +192,7 @@ axs[1].plot(low_gammabeta, p_factor*a_nonrel*low_gammabeta/np.sqrt(1+low_gammabe
             label='Nonrelativistic fit')
 
 axs[1].set_xlabel(r'$\gamma\beta = \beta/\sqrt{1-\beta^2}$')
+axs[1].set_ylabel(r'Momentum $p$ (keV/$c$)')
 axs[1].set_xlim(left=0)
 axs[1].set_title(r'Momentum vs. $\gamma\beta$')
 
@@ -230,3 +231,125 @@ out_file.parent.mkdir(parents=True, exist_ok=True)
 fig.savefig(out_file, dpi=220, bbox_inches='tight')
 
 print('Saved', out_file)
+
+# Calculate e/m at each B, in C/kg
+em_factor = 1e4 * c / rho_m
+
+em_nonrel_points = em_factor * beta / B
+em_rel_points = em_factor * gamma * beta / B
+
+# Propagate measurement uncertainties
+frac_V_err = V0_stat_kV / np.abs(V0_kV)
+frac_B_err = B_err / np.abs(B)
+
+em_nonrel_point_err = em_nonrel_points * np.sqrt(
+    frac_V_err**2 + (2 * frac_B_err)**2
+)
+
+em_rel_point_err = em_rel_points * np.sqrt(
+    (gamma**2 * frac_V_err)**2
+    + ((1 + gamma**2) * frac_B_err)**2
+)
+
+# accepted value
+em_reference = elementary_charge / electron_mass
+
+# scale for nicer axis labels
+scale = 1e11
+
+fig, ax = plt.subplots(figsize=(8, 5), layout='constrained')
+
+# darker point colors
+nonrel_point_color = "steelblue"
+rel_point_color = "mediumpurple"
+
+# lighter band colors
+nonrel_band_color = "#cfe3ff"   # light blue
+rel_band_color = "#e6d5ff"      # light purple
+
+# shaded band: relativistic e/m ± std
+ax.axhspan(
+    (em_rel - em_rel_err) / scale,
+    (em_rel + em_rel_err) / scale,
+    color=rel_band_color,
+    alpha=0.6,
+    label=(
+        fr'Relativistic e/m range: {em_rel / scale:.3f}' 
+        fr'$\pm {em_rel_err / scale:.3f}_\mathrm{{stat}}$'
+        r'$\times 10^{11}$ C/kg'
+    )
+)
+
+# shaded band: nonrelativistic e/m ± std
+ax.axhspan(
+    (em_nonrel - em_nonrel_err) / scale,
+    (em_nonrel + em_nonrel_err) / scale,
+    color=nonrel_band_color,
+    alpha=0.6,
+    label=(
+        fr'Nonrelativistic e/m range: {em_nonrel / scale:.3f}'
+        fr'$\pm {em_nonrel_err / scale:.3f}_\mathrm{{stat}}$'
+        r'$\times 10^{11}$ C/kg'
+    )
+)
+
+# relativistic points
+ax.errorbar(
+    B,
+    em_rel_points / scale,
+    xerr=B_err,
+    yerr=em_rel_point_err / scale,
+    fmt='s',
+    ms=5,
+    color=rel_point_color,
+    ecolor=rel_point_color,
+    capsize=3,
+    elinewidth=1.1,
+    label='Relativistic points'
+)
+
+# nonrelativistic points
+ax.errorbar(
+    B,
+    em_nonrel_points / scale,
+    xerr=B_err,
+    yerr=em_nonrel_point_err / scale,
+    fmt='o',
+    ms=5,
+    color=nonrel_point_color,
+    ecolor=nonrel_point_color,
+    capsize=3,
+    elinewidth=1.1,
+    label='Nonrelativistic points'
+)
+
+# accepted value
+ax.axhline(
+    em_reference / scale,
+    color='0.25',
+    linestyle='--',
+    linewidth=1.5,
+    label=(
+        fr'Accepted $e/m$: {em_reference / scale:.3f}'
+        r'$\times 10^{11}$ C/kg'
+    )
+)
+
+ax.set_xlabel(r'Magnetic field $B$ (G)')
+ax.set_ylabel(r'$e/m$ ($10^{11}$ C/kg)')
+ax.set_title(r'Calculated $e/m$ vs. magnetic field')
+ax.grid(alpha=0.22)
+ax.legend(
+    loc='upper center',
+    bbox_to_anchor=(0.5, -0.12),
+    ncol=2
+)
+
+out_file = Path(
+    "/home/rck67/jlab/relativistic_dynamics/figures/relativistic_relations/em_vs_B_bands.png"
+)
+out_file.parent.mkdir(parents=True, exist_ok=True)
+fig.savefig(out_file, dpi=220, bbox_inches='tight')
+print("Saved", out_file)
+
+plt.show()

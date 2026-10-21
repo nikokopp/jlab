@@ -195,6 +195,5 @@ def main():
     print(f"\nSaved plot: {figure_file}\nSaved data and model comparison: {OUTPUT_DIR}")
     plt.show()
 
-
 if __name__ == "__main__":
     main()
